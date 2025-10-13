@@ -73,12 +73,12 @@ volatile uint16_t gFPS = 60;
 static const uint16_t N_CHOICES[] = {32, 64, 128, 256, 512, 1024, 2048};
 volatile uint8_t gNidx = 4;           // default N=512 (index 4)
 volatile uint8_t gAgg = 1;            // aggregation (>=1) => bpp defaults to 1
-volatile float gFmaxHz = 3500.0f;     // default horizontal max frequency
+volatile float gFmaxHz = 5000.0f;     // default horizontal max frequency
 volatile bool gFmaxFollowNyq = false; // Fmax acts as zoom (independent of Nyquist)
 
 // Y-axis range (in dBFS). Top is ymax, bottom is ymin.
 volatile float gYMax_dB = -20.0f; // default top
-volatile float gYMin_dB = -60.0f; // default bottom
+volatile float gYMin_dB = -50.0f; // default bottom
 
 enum XScaleMode
 {
@@ -961,7 +961,7 @@ void setup()
 
   // Start with Fmax acting as horizontal zoom, clamped to Nyquist
   gFmaxFollowNyq = false;
-  gFmaxHz = clampf(3500.0f, 50.0f, 0.5f * (float)gFs);
+  gFmaxHz = clampf(5000.0f, 50.0f, 0.5f * (float)gFs);
 
   draw_axes(N_CHOICES[gNidx]);
 }
