@@ -23,7 +23,6 @@ static void spectrum_task(void *pvParameters)
 {
   static int16_t frame[FFT_MAX];
   uint32_t lastPos = capture_write_pos();
-  uint32_t lastFrameMicros = 0;
 
   for (;;)
   {
@@ -96,12 +95,11 @@ static void spectrum_task(void *pvParameters)
 
     setVU(vu_from_peakAbs(peakAbs));
 
-    // FPS cap
-    uint32_t now = micros();
-    uint32_t minDelta = 1000000UL / gFPS;
-    if (lastFrameMicros && now - lastFrameMicros < minDelta)
-      delayMicroseconds(minDelta - (now - lastFrameMicros));
-    lastFrameMicros = micros();
+    // FPS cap. A real (yielding) delay, not delayMicroseconds()/busy-wait: with
+    // the hop now sized to arrive right on the FPS cadence, this task is ready
+    // to run almost every iteration, so a non-yielding wait here would pin
+    // core 0 and starve its idle task, tripping the idle-task watchdog reset.
+    vTaskDelay(pdMS_TO_TICKS(1000 / gFPS));
   }
 }
 
