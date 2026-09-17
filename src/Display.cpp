@@ -54,6 +54,24 @@ static inline int y_from_db(float dB)
   return y;
 }
 
+// Maps a linear amplitude fraction of full scale (0.0-1.0) to a plot row.
+// Unlike y_from_db, this range is fixed (0-100%), not user-adjustable.
+static inline int y_from_linear(float frac)
+{
+  if (frac > 1.0f)
+    frac = 1.0f;
+  if (frac < 0.0f)
+    frac = 0.0f;
+
+  int h = (int)roundf((1.0f - frac) * (PLOT_H - 1));
+  int y = PLOT_Y + h;
+  if (y < PLOT_Y)
+    y = PLOT_Y;
+  if (y > BASE_Y)
+    y = BASE_Y;
+  return y;
+}
+
 void draw_axes(uint16_t N)
 {
   tft.fillScreen(COL_BG);
@@ -166,7 +184,10 @@ void draw_axes(uint16_t N)
   };
   draw_xticks();
 
-  // Y ticks (dBFS), using explicit top/bottom
+  // Y ticks. The topmost major tick's label carries the unit suffix (dB or
+  // %, for full-scale amplitude), so the axis is self-labeling without
+  // needing separate room for a unit caption.
+  if (gYScale == YS_DB)
   {
     float top = gYMax_dB, bot = gYMin_dB;
     if (bot > top)
@@ -185,6 +206,7 @@ void draw_axes(uint16_t N)
 
     int dTop = (int)ceilf(top);
     int dBot = (int)floorf(bot);
+    bool firstMajor = true;
 
     for (int d = dTop; d >= dBot; d -= 2)
     {
@@ -201,8 +223,39 @@ void draw_axes(uint16_t N)
 
       if (major)
       {
-        char lab[8];
-        snprintf(lab, sizeof(lab), "%d", d);
+        char lab[12];
+        snprintf(lab, sizeof(lab), firstMajor ? "%ddB" : "%d", d);
+        firstMajor = false;
+        tft.setCursor(PLOT_X - 28, y - 3);
+        tft.setTextColor(COL_TEXT, COL_BG);
+        tft.print(lab);
+      }
+    }
+  }
+  else // YS_LIN: fixed 0-100% of full-scale amplitude
+  {
+    const int majorStepPct = 20;
+    const int minorStepPct = 10;
+    bool firstMajor = true;
+
+    for (int pct = 100; pct >= 0; pct -= minorStepPct)
+    {
+      bool major = (pct % majorStepPct == 0);
+      int y = y_from_linear(pct / 100.0f);
+
+      if (major)
+        tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
+      else
+        tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID_MINOR);
+
+      int tickLen = major ? 6 : 3;
+      tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
+
+      if (major)
+      {
+        char lab[12];
+        snprintf(lab, sizeof(lab), firstMajor ? "%d%%" : "%d", pct);
+        firstMajor = false;
         tft.setCursor(PLOT_X - 28, y - 3);
         tft.setTextColor(COL_TEXT, COL_BG);
         tft.print(lab);
@@ -301,10 +354,19 @@ void draw_line_spectrum(uint16_t N)
     float sumP = gPrefixPow[k1] - gPrefixPow[k0 - 1];
     float meanP = sumP / (float)(k1 - k0 + 1);
 
-    float dB = (meanP > 0.0f && gRefPow > 0.0f) ? 10.0f * log10f(meanP / gRefPow) : -120.0f;
-
     int x = PLOT_X + i;
-    int y = y_from_db(dB);
+    int y;
+    if (gYScale == YS_DB)
+    {
+      // meanP/gRefPow is a power ratio; 10*log10(power ratio) == 20*log10(amplitude ratio) == dBFS.
+      float dB = (meanP > 0.0f && gRefPow > 0.0f) ? 10.0f * log10f(meanP / gRefPow) : -120.0f;
+      y = y_from_db(dB);
+    }
+    else
+    {
+      float frac = (meanP > 0.0f && gRefPow > 0.0f) ? sqrtf(meanP / gRefPow) : 0.0f;
+      y = y_from_linear(frac);
+    }
 
     if (havePrev)
     {

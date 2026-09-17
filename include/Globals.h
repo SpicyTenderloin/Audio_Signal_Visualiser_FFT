@@ -28,6 +28,13 @@ enum XScaleMode
 };
 extern volatile XScaleMode gXScale;
 
+enum YScaleMode
+{
+  YS_DB = 0,  // dBFS (20*log10 of amplitude ratio)
+  YS_LIN = 1  // linear amplitude, as a % of full scale
+};
+extern volatile YScaleMode gYScale;
+
 extern bool gUseHann;
 extern bool gPaused;
 

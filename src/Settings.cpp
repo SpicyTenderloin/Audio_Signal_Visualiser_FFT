@@ -96,3 +96,10 @@ void setXScale(uint8_t m)
   gAxesDirty = true;
   gHUDDirty = true;
 }
+
+void setYScale(uint8_t m)
+{
+  gYScale = (m ? YS_LIN : YS_DB);
+  gAxesDirty = true;
+  gHUDDirty = true;
+}

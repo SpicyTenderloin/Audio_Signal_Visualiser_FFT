@@ -29,3 +29,5 @@ void setNidx(uint8_t i);
 void setAgg(uint8_t v);
 // Selects linear (0) or logarithmic (1) X axis scaling.
 void setXScale(uint8_t m);
+// Selects dBFS (0) or linear-amplitude-% (1) Y axis scaling.
+void setYScale(uint8_t m);

@@ -15,6 +15,7 @@ volatile float gYMax_dB = -20.0f; // default top
 volatile float gYMin_dB = -50.0f; // default bottom
 
 volatile XScaleMode gXScale = XS_LIN;
+volatile YScaleMode gYScale = YS_DB;
 
 bool gUseHann = true;
 bool gPaused = false;
