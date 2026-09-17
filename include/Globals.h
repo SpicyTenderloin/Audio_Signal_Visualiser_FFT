@@ -11,7 +11,7 @@ extern Adafruit_ILI9341 tft;
 extern volatile uint32_t gFs;  // Hz, sample rate (serial-adjustable)
 extern volatile uint16_t gFPS;
 
-extern const uint16_t N_CHOICES[7];
+extern const uint16_t N_CHOICES[8];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
 extern volatile uint8_t gAgg;          // aggregation (>=1) => bpp defaults to 1
 extern volatile float gFmaxHz;         // horizontal max frequency

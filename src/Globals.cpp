@@ -5,7 +5,7 @@ Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 volatile uint32_t gFs = 12000;
 volatile uint16_t gFPS = 60;
 
-const uint16_t N_CHOICES[7] = {32, 64, 128, 256, 512, 1024, 2048};
+const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
 volatile uint8_t gNidx = 4; // default N=512 (index 4)
 volatile uint8_t gAgg = 1;
 volatile float gFmaxHz = 5000.0f;

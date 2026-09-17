@@ -57,7 +57,7 @@ static const int BASE_Y = PLOT_Y + PLOT_H - 1;
 #define COL_LINE ILI9341_CYAN
 
 // -------------------- Buffers ---------------------
-#define FFT_MAX 2048
+#define FFT_MAX 4096
 
 // -------------------- Magnitude scaling -----------
 static const float ADC_FS = 4095.0f; // 12-bit ADC raw counts
