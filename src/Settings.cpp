@@ -90,16 +90,6 @@ void setAgg(uint8_t v)
   gHUDDirty = true;
 }
 
-void setOverlap(uint8_t v)
-{
-  if (v < 1)
-    v = 1;
-  if (v > 8)
-    v = 8;
-  gOverlap = v;
-  gHUDDirty = true;
-}
-
 void setXScale(uint8_t m)
 {
   gXScale = (m ? XS_LOG : XS_LIN);

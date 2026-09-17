@@ -22,7 +22,6 @@ void print_controls()
   Serial.println(F("  n=32|64|128|256|512|1024|2048   # e.g. n=512"));
   Serial.println(F("  fps=10..120         # e.g. fps=60"));
   Serial.println(F("  agg=1..64           # e.g. agg=4 (coarser plot)"));
-  Serial.println(F("  overlap=1..8         # capture window overlap divisor, e.g. overlap=4 (75% overlap)"));
   Serial.println(F("  xscale=lin|log      # set X axis scale, e.g. xscale=lin"));
   Serial.println(F("  fmax=Hz             # set max plotted freq (horizontal zoom), e.g. fmax=3500"));
   Serial.println(F("  fmax=nyq            # make Fmax follow Nyquist (Fs/2) again"));
@@ -38,8 +37,10 @@ void print_stats()
   uint16_t N = N_CHOICES[gNidx];
   int bpp = bins_per_point(N);
   float df_eff = (float)gFs / N * bpp;
-  Serial.printf("Fs=%lu  N=%u  Df=%.2fHz  FPS=%u  BPP=%d  Overlap=1/%u  X=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
-                (unsigned long)gFs, N, df_eff, gFPS, bpp, gOverlap, (gXScale == XS_LIN ? "LIN" : "LOG"),
+  int hop = clampi((int)(gFs / gFPS), 1, N);
+  float overlapPct = 100.0f * (1.0f - (float)hop / (float)N);
+  Serial.printf("Fs=%lu  N=%u  Df=%.2fHz  FPS=%u  BPP=%d  Overlap=%.0f%%  X=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
+                (unsigned long)gFs, N, df_eff, gFPS, bpp, overlapPct, (gXScale == XS_LIN ? "LIN" : "LOG"),
                 gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
   Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
 }
@@ -79,10 +80,6 @@ void apply_command(const char *s)
   else if (!strncmp(s, "agg=", 4))
   {
     setAgg((uint8_t)atoi(s + 4));
-  }
-  else if (!strncmp(s, "overlap=", 8))
-  {
-    setOverlap((uint8_t)atoi(s + 8));
   }
   else if (!strncmp(s, "xscale=", 7))
   {

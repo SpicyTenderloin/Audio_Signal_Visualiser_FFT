@@ -13,9 +13,12 @@
 
 // Runs forever on core 0: pulls the newest (possibly overlapping) window of
 // samples out of the capture ring buffer, FFTs it, and redraws the plot.
-// Using overlapping windows (hop = N/gOverlap, instead of a fresh block of N
-// samples every frame) decouples the frame rate from the FFT length, so a
-// large N no longer means a sluggish, jumpy plot.
+//
+// The hop (new samples required before the next window) is sized from the
+// *target frame rate*, not from N: hop = Fs/gFPS, clamped to N. That keeps
+// the wait for fresh data roughly constant (~1/gFPS) no matter how large N
+// gets - a large N automatically gets heavier overlap to compensate, instead
+// of the frame rate collapsing as N grows.
 static void spectrum_task(void *pvParameters)
 {
   static int16_t frame[FFT_MAX];
@@ -34,9 +37,7 @@ static void spectrum_task(void *pvParameters)
     }
 
     const uint16_t N = N_CHOICES[gNidx];
-    int hop = N / gOverlap;
-    if (hop < 1)
-      hop = 1;
+    int hop = clampi((int)(gFs / gFPS), 1, N);
 
     uint32_t pos = capture_write_pos();
     if ((uint32_t)(pos - lastPos) < (uint32_t)hop)
