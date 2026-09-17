@@ -60,7 +60,7 @@ void setup()
 
   // Start with Fmax acting as horizontal zoom, clamped to Nyquist
   gFmaxFollowNyq = false;
-  gFmaxHz = clampf(5000.0f, 50.0f, 0.5f * (float)gFs);
+  gFmaxHz = clampf(2500.0f, 50.0f, 0.5f * (float)gFs);
 
   // FFT/draw runs on core 0 so button/serial polling on core 1 (loop())
   // never waits on FFT compute or SPI draw time. It performs the first
