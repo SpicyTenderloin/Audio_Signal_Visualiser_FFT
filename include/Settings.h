@@ -27,5 +27,7 @@ void setFPS(uint16_t v);
 void setNidx(uint8_t i);
 // Sets the bin-aggregation factor (coarser/finer plot), clamped to [1, 64].
 void setAgg(uint8_t v);
+// Sets the capture window overlap divisor (hop = N/v), clamped to [1, 8].
+void setOverlap(uint8_t v);
 // Selects linear (0) or logarithmic (1) X axis scaling.
 void setXScale(uint8_t m);

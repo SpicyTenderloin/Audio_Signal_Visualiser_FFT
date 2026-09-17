@@ -4,37 +4,22 @@
 #include "DSPUtils.h"
 #include "esp_adc_cal.h"
 
-volatile int16_t *volatile isrBuf = bufA;
-volatile uint16_t isrIdx = 0;
-volatile uint16_t isrN = 512; // match default N at startup
-volatile bool bufReady = false;
-volatile int16_t *volatile readyBuf = nullptr;
-
-volatile int16_t isrPeakAbs = 0;
+// Single-producer (ISR) circular buffer of centered raw samples. The consumer
+// (spectrum task) only ever reads samples well behind the write pointer, so
+// no locking is needed between the two cores for the buffer itself.
+static int16_t capBuf[CAP_BUF_LEN];
+static volatile uint32_t gCapWritePos = 0;
 
 hw_timer_t *gTimer = nullptr;
-portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR onTimer()
 {
   int raw = adc1_get_raw(MIC_CH); // 0..4095
   int16_t centered = (int16_t)raw - (int16_t)gDC;
-  int16_t a = centered >= 0 ? centered : -centered;
 
-  portENTER_CRITICAL_ISR(&timerMux);
-  if (a > isrPeakAbs)
-    isrPeakAbs = a;
-  isrBuf[isrIdx++] = centered;
-
-  if (isrIdx >= isrN)
-  {
-    readyBuf = isrBuf;
-    bufReady = true;
-    isrBuf = (isrBuf == bufA) ? bufB : bufA;
-    isrIdx = 0;
-    isrPeakAbs = 0;
-  }
-  portEXIT_CRITICAL_ISR(&timerMux);
+  uint32_t pos = gCapWritePos;
+  capBuf[pos & (CAP_BUF_LEN - 1)] = centered;
+  gCapWritePos = pos + 1; // single 32-bit store: atomic w.r.t. the reading core
 }
 
 void reprogram_timer(uint32_t fs)
@@ -59,6 +44,18 @@ uint16_t quick_dc_estimate()
   return (uint16_t)(s / 256);
 }
 
+uint32_t capture_write_pos()
+{
+  return gCapWritePos;
+}
+
+void capture_read_window(int16_t *out, uint16_t N, uint32_t endPos)
+{
+  uint32_t start = endPos - N;
+  for (uint16_t i = 0; i < N; i++)
+    out[i] = capBuf[(start + i) & (CAP_BUF_LEN - 1)];
+}
+
 void init_audio_capture()
 {
   // ADC1 config (fast path)
@@ -72,13 +69,5 @@ void init_audio_capture()
   reprogram_timer(gFs);
   timerAlarmEnable(gTimer);
 
-  // Set ISR N
-  portENTER_CRITICAL(&timerMux);
-  isrN = N_CHOICES[gNidx];
-  isrIdx = 0;
-  isrBuf = bufA;
-  readyBuf = nullptr;
-  bufReady = false;
-  isrPeakAbs = 0;
-  portEXIT_CRITICAL(&timerMux);
+  gCapWritePos = 0;
 }

@@ -14,6 +14,7 @@ extern volatile uint16_t gFPS;
 extern const uint16_t N_CHOICES[7];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
 extern volatile uint8_t gAgg;          // aggregation (>=1) => bpp defaults to 1
+extern volatile uint8_t gOverlap;      // capture window overlap divisor: hop = N/gOverlap (1 = no overlap)
 extern volatile float gFmaxHz;         // horizontal max frequency
 extern volatile bool gFmaxFollowNyq;   // Fmax acts as zoom (independent of Nyquist)
 
@@ -34,10 +35,6 @@ extern bool gPaused;
 // -------------------- FFT / sample buffers -----------
 extern float fft_buf[2 * FFT_MAX];
 extern float window_buf[FFT_MAX];
-
-// Ping-pong raw sample buffers (int16 centered)
-extern int16_t bufA[FFT_MAX];
-extern int16_t bufB[FFT_MAX];
 
 // -------------------- ADC/DC ----------------------
 extern volatile uint16_t gDC;

@@ -8,6 +8,7 @@ volatile uint16_t gFPS = 60;
 const uint16_t N_CHOICES[7] = {32, 64, 128, 256, 512, 1024, 2048};
 volatile uint8_t gNidx = 4; // default N=512 (index 4)
 volatile uint8_t gAgg = 1;
+volatile uint8_t gOverlap = 2; // 50% overlap by default
 volatile float gFmaxHz = 5000.0f;
 volatile bool gFmaxFollowNyq = false;
 
@@ -21,9 +22,6 @@ bool gPaused = false;
 
 float fft_buf[2 * FFT_MAX];
 float window_buf[FFT_MAX];
-
-int16_t bufA[FFT_MAX];
-int16_t bufB[FFT_MAX];
 
 volatile uint16_t gDC = 2048;
 

@@ -75,12 +75,7 @@ void setNidx(uint8_t i)
   if (i >= sizeof(N_CHOICES) / sizeof(N_CHOICES[0]))
     i = (sizeof(N_CHOICES) / sizeof(N_CHOICES[0])) - 1;
   gNidx = i;
-  uint16_t N = N_CHOICES[gNidx];
-  make_window_for_N(N);
-  portENTER_CRITICAL(&timerMux);
-  isrN = N;
-  isrIdx = 0;
-  portEXIT_CRITICAL(&timerMux);
+  make_window_for_N(N_CHOICES[gNidx]);
   gAxesDirty = true;
   gHUDDirty = true;
 }
@@ -92,6 +87,16 @@ void setAgg(uint8_t v)
   if (v > 64)
     v = 64;
   gAgg = v;
+  gHUDDirty = true;
+}
+
+void setOverlap(uint8_t v)
+{
+  if (v < 1)
+    v = 1;
+  if (v > 8)
+    v = 8;
+  gOverlap = v;
   gHUDDirty = true;
 }
 
