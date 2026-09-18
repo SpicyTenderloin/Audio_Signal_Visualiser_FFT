@@ -3,24 +3,29 @@
 #include <Arduino.h>
 #include "Config.h"
 
-// -------------------- Hardware Timer Capture -------
+// -------------------- I2S/DMA ADC Capture -----------
+// Sampling is driven by the ESP32's I2S peripheral in built-in-ADC mode:
+// DMA pulls conversions from ADC1 continuously in the background at the
+// configured clock, with no per-sample CPU/ISR cost, unlike the old
+// hardware-timer + blocking adc1_get_raw() approach (which had enough
+// per-call driver overhead to make it the practical ceiling on sample
+// rate). A dedicated task drains the DMA'd samples into the circular
+// capture buffer below (capture_drain_task, in AudioCapture.cpp) - it has
+// to be a task rather than an ISR, since i2s_read() blocks.
+//
 // Circular capture buffer length in samples: FFT_MAX plus 50% headroom, so
-// the consumer always has margin behind the ISR write pointer before a
-// window it is reading could get overwritten. That headroom only has to
-// outlast a few microseconds of per-sample reads, even at the fastest
-// sample rate (2048 samples of headroom at FFT_MAX=4096 is >50ms at 40kHz),
-// so 50% is already generous - it doesn't need FFT_MAX's old 100% margin.
-// Not a power of two, so indexing uses modulo instead of a bitmask.
+// the consumer always has margin behind the write position before a window
+// it is reading could get overwritten. The drain task writes in bursts (one
+// DMA chunk at a time, a few hundred samples) rather than one sample at a
+// time now, but that headroom is still enormously larger than one burst,
+// so 50% margin remains very generous. Not a power of two, so indexing
+// uses modulo instead of a bitmask.
 #define CAP_BUF_LEN (FFT_MAX + FFT_MAX / 2)
 
-extern hw_timer_t *gTimer;
+// Reconfigures the I2S sample rate (Hz) for a running capture.
+void set_sample_rate(uint32_t fs);
 
-// Timer ISR: samples the mic ADC and appends it to the circular capture buffer.
-void IRAM_ATTR onTimer();
-// Reprograms the hardware timer alarm period for a new sample rate (Hz).
-void reprogram_timer(uint32_t fs);
-
-// Sets up ADC1 + the hardware timer capture; call once from setup().
+// Sets up ADC1 + I2S/DMA capture and starts the drain task; call once from setup().
 void init_audio_capture();
 
 // Averages a batch of raw ADC samples to estimate the DC offset.

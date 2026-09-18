@@ -30,7 +30,7 @@ void setFs(uint32_t fs)
 {
   fs = clampi((int)fs, 2000, 40000);
   gFs = fs;
-  reprogram_timer(gFs);
+  set_sample_rate(gFs);
   float nyq = 0.5f * (float)gFs;
   if (gFmaxHz > nyq)
     gFmaxHz = nyq;
