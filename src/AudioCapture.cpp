@@ -8,7 +8,9 @@
 // Single-producer circular buffer of centered samples. The consumer
 // (spectrum task) only ever reads samples well behind the write position,
 // so no locking is needed between cores for the buffer itself.
-static int16_t capBuf[CAP_BUF_LEN];
+// Heap-allocated (not a fixed-size static array), same reasoning as
+// fft_buf/window_buf/gPrefixPow in Globals.cpp - see alloc_fft_buffers().
+static int16_t *capBuf = nullptr;
 static volatile uint32_t gCapWritePos = 0;
 
 static const i2s_port_t I2S_PORT = I2S_NUM_0;
@@ -79,6 +81,8 @@ static void capture_drain_task(void *pvParameters)
 
 void init_audio_capture()
 {
+  capBuf = new int16_t[CAP_BUF_LEN];
+
   // ADC1 config (channel width/attenuation). I2S built-in-ADC mode still
   // uses this configuration - it just triggers conversions via DMA instead
   // of software polling.

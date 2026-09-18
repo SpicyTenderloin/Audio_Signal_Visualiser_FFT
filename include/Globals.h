@@ -11,7 +11,7 @@ extern Adafruit_ILI9341 tft;
 extern volatile uint32_t gFs;  // Hz, sample rate (serial-adjustable)
 extern volatile uint16_t gFPS;
 
-extern const uint16_t N_CHOICES[8];
+extern const uint16_t N_CHOICES[9];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
 extern volatile uint8_t gAgg;          // aggregation (>=1) => bpp defaults to 1
 extern volatile float gFmaxHz;         // horizontal max frequency
@@ -40,8 +40,12 @@ extern bool gPaused;
 extern volatile float gWindowGain; // coherent gain (mean) of window_buf for the current N; 1.0 when gUseHann is off
 
 // -------------------- FFT / sample buffers -----------
-extern float fft_buf[2 * FFT_MAX];
-extern float window_buf[FFT_MAX];
+// Heap-allocated (not fixed-size static arrays) so FFT_MAX can be sized
+// well beyond what the linker's static DRAM segment alone can fit -
+// allocated once by alloc_fft_buffers(), called first thing in setup().
+extern float *fft_buf;    // size 2*FFT_MAX
+extern float *window_buf; // size FFT_MAX
+void alloc_fft_buffers();
 
 // -------------------- ADC/DC ----------------------
 extern volatile uint16_t gDC;
@@ -51,7 +55,7 @@ extern bool gAxesDirty;
 extern bool gHUDDirty;
 
 // --- Fast draw (prefix sums over per-bin power) ---
-extern float gPrefixPow[FFT_MAX / 2]; // prefix sums for O(1) bin-range averages
+extern float *gPrefixPow; // size FFT_MAX/2; prefix sums for O(1) bin-range averages, heap-allocated (see alloc_fft_buffers())
 
 // -------------------- Performance stats -----------
 // Actual measured frame rate (frames/sec spectrum_task delivers), updated

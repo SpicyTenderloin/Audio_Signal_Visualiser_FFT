@@ -22,10 +22,15 @@ void setup()
   Serial.begin(115200);
   delay(50);
   Serial.println();
-  Serial.println(F("FFT Spectrum (Line) - HW Timer ADC, Fs default 15 kHz (serial-adjustable), Fmax=horizontal zoom"));
+  Serial.println(F("FFT Spectrum (Line) - I2S/DMA ADC, Fs default 40 kHz (serial-adjustable), Fmax=horizontal zoom"));
   print_controls();
   print_stats();
   print_prompt();
+
+  // Heap-allocate the FFT/window/capture buffers before anything touches
+  // them - they're sized off FFT_MAX, which is too large for the linker's
+  // static DRAM segment alone to fit as fixed arrays.
+  alloc_fft_buffers();
 
   init_controls();
 
@@ -57,7 +62,7 @@ void setup()
   // Window for the default FFT length
   make_window_for_N(N_CHOICES[gNidx]);
 
-  // ADC + hardware timer capture (mic sampling into the circular buffer)
+  // ADC + I2S/DMA capture (mic sampling into the circular buffer)
   init_audio_capture();
 
   // Start with Fmax acting as horizontal zoom, clamped to Nyquist
