@@ -31,7 +31,7 @@ uint16_t quick_dc_estimate()
 
 void set_sample_rate(uint32_t fs)
 {
-  fs = clampi((int)fs, 2000, 40000);
+  fs = clampi((int)fs, 2000, 200000);
   i2s_set_sample_rates(I2S_PORT, fs);
 }
 

@@ -28,7 +28,7 @@ void scaleFmax(bool up, float pct)
 
 void setFs(uint32_t fs)
 {
-  fs = clampi((int)fs, 2000, 40000);
+  fs = clampi((int)fs, 2000, 200000);
   gFs = fs;
   set_sample_rate(gFs);
   float nyq = 0.5f * (float)gFs;
