@@ -2,8 +2,8 @@
 #include "Config.h"
 #include "Globals.h"
 #include "DSPUtils.h"
-#include "esp_adc_cal.h"
 #include "driver/i2s.h"
+#include <new>
 
 // Single-producer circular buffer of centered samples. The consumer
 // (spectrum task) only ever reads samples well behind the write position,
@@ -33,7 +33,7 @@ uint16_t quick_dc_estimate()
 
 void set_sample_rate(uint32_t fs)
 {
-  fs = clampi((int)fs, 2000, 200000);
+  fs = clampi((int)fs, FS_MIN_HZ, FS_MAX_HZ);
   i2s_set_sample_rates(I2S_PORT, fs);
 }
 
@@ -81,7 +81,8 @@ static void capture_drain_task(void *pvParameters)
 
 void init_audio_capture()
 {
-  capBuf = new int16_t[CAP_BUF_LEN];
+  capBuf = new (std::nothrow) int16_t[CAP_BUF_LEN];
+  check_alloc(capBuf, "capBuf", CAP_BUF_LEN * sizeof(int16_t));
 
   // ADC1 config (channel width/attenuation). I2S built-in-ADC mode still
   // uses this configuration - it just triggers conversions via DMA instead

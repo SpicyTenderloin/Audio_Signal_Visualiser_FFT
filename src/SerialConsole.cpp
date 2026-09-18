@@ -26,6 +26,7 @@ void print_controls()
   Serial.println(F("  yscale=db|lin       # set Y axis scale (dBFS or linear %FS), e.g. yscale=lin"));
   Serial.println(F("  fmax=Hz             # set max plotted freq (horizontal zoom), e.g. fmax=3500"));
   Serial.println(F("  fmax=nyq            # make Fmax follow Nyquist (Fs/2) again"));
+  Serial.println(F("                      #   (both print a suggested fs=/n= for best fit to the plot width)"));
   Serial.println(F("  ymax=<dB>           # set top of Y axis in dBFS, e.g. ymax=-10"));
   Serial.println(F("  ymin=<dB>           # set bottom of Y axis in dBFS, e.g. ymin=-80"));
   Serial.println(F("  hann=0|1            # Hann window off/on, e.g. hann=1"));
@@ -46,6 +47,17 @@ void print_stats()
   Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
   Serial.printf("FPS(actual)=%.1f  Frame=%.2fms  FFT=%.2fms\r\n",
                 (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0);
+}
+
+// Suggests the fs=/n= combo whose visible bin count (0..fmaxHz) best fills
+// the plot's PLOT_W pixels - printed whenever Fmax changes via a serial
+// command, since that's the setting that determines what "best" even means.
+static void print_fidelity_tip(float fmaxHz)
+{
+  FsNRecommendation rec = recommend_fs_n(fmaxHz);
+  Serial.printf("  tip: for the best match to this display's %d plot pixels at Fmax=%.0fHz, "
+                "try fs=%lu n=%u (~%d bins across the plot)\r\n",
+                PLOT_W, (double)fmaxHz, (unsigned long)rec.fs, rec.N, rec.kvis);
 }
 
 void print_prompt() { Serial.print("> "); }
@@ -104,6 +116,7 @@ void apply_command(const char *s)
       setFmax_followNyq();
     else
       setFmax(atof(s + 5));
+    print_fidelity_tip(gFmaxHz); // gFmaxHz: the actual post-clamp value
   }
   else if (!strncmp(s, "ymax=", 5))
   {
@@ -115,9 +128,7 @@ void apply_command(const char *s)
   }
   else if (!strncmp(s, "hann=", 5))
   {
-    gUseHann = (atoi(s + 5) != 0);
-    gAxesDirty = true;
-    gHUDDirty = true;
+    setHann(atoi(s + 5) != 0);
   }
   else if (!strcmp(s, "pause"))
   {

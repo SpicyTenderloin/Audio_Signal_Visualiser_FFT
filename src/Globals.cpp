@@ -1,4 +1,5 @@
 #include "Globals.h"
+#include <new>
 
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
@@ -38,7 +39,22 @@ float gRefPow = 1.0f;
 
 void alloc_fft_buffers()
 {
-  fft_buf = new float[2 * FFT_MAX];
-  window_buf = new float[FFT_MAX];
-  gPrefixPow = new float[FFT_MAX / 2];
+  fft_buf = new (std::nothrow) float[2 * FFT_MAX];
+  check_alloc(fft_buf, "fft_buf", 2 * FFT_MAX * sizeof(float));
+
+  window_buf = new (std::nothrow) float[FFT_MAX];
+  check_alloc(window_buf, "window_buf", FFT_MAX * sizeof(float));
+
+  gPrefixPow = new (std::nothrow) float[FFT_MAX / 2];
+  check_alloc(gPrefixPow, "gPrefixPow", (FFT_MAX / 2) * sizeof(float));
+}
+
+void check_alloc(const void *p, const char *what, size_t bytes)
+{
+  if (p)
+    return;
+  Serial.printf("FATAL: failed to allocate %u bytes for %s (free heap: %u bytes). Halting.\r\n",
+                (unsigned)bytes, what, (unsigned)ESP.getFreeHeap());
+  while (true)
+    delay(1000);
 }

@@ -20,3 +20,27 @@ void format_freq_label(char *out, size_t n, float fHz);
 // -------------------- Plot bin aggregation ------------------
 // Number of FFT bins averaged together per horizontal pixel, given N.
 int bins_per_point(uint16_t N);
+
+// -------------------- Visible bin range ------------------
+// Number of FFT bins visible from bin 1 up to fmax (i.e. the highest bin
+// index draw_line_spectrum() will ever read), for a hypothetical fs/N -
+// a pure function of its arguments, not the live gFs/gFmaxHz, so it can be
+// used for "what if" queries (see recommend_fs_n()) without touching state.
+int compute_visible_bins(uint16_t N, float fs, float fmax);
+// Same, but for the current gFs/gFmaxHz - what SpectrumTask/Display.cpp
+// actually use to bound their per-frame work to bins that get displayed.
+int visible_bin_count(uint16_t N);
+
+// -------------------- Fs/N fidelity recommendation ------------------
+struct FsNRecommendation
+{
+  uint32_t fs;
+  uint16_t N;
+  int kvis; // resulting visible bin count at (fs, N, fmaxHz)
+};
+
+// Finds the (Fs, N) combination whose visible bin count (0..fmaxHz) best
+// matches the plot's PLOT_W horizontal pixels - the point past which more
+// bins just get averaged together for display anyway, so bins beyond it
+// buy nothing, and fewer bins under-use the available width.
+FsNRecommendation recommend_fs_n(float fmaxHz);

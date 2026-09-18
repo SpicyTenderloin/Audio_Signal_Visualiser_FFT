@@ -47,6 +47,12 @@ extern float *fft_buf;    // size 2*FFT_MAX
 extern float *window_buf; // size FFT_MAX
 void alloc_fft_buffers();
 
+// Halts with a clear serial message if p is null (an allocation failed),
+// instead of continuing into an eventual null-pointer crash somewhere
+// downstream that would be much harder to diagnose. what/bytes are just
+// for the message.
+void check_alloc(const void *p, const char *what, size_t bytes);
+
 // -------------------- ADC/DC ----------------------
 extern volatile uint16_t gDC;
 

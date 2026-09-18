@@ -3,6 +3,11 @@
 
 void setVU(uint8_t level)
 {
+  static uint8_t s_lastLevel = 0xFF; // sentinel: force the first call through
+  if (level == s_lastLevel)
+    return;
+  s_lastLevel = level;
+
   const uint8_t pins[6] = {VU1, VU2, VU3, VU4, VU5, VU6};
   for (uint8_t i = 0; i < 6; i++)
     digitalWrite(pins[i], (i < level) ? HIGH : LOW);

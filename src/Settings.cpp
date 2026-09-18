@@ -28,7 +28,7 @@ void scaleFmax(bool up, float pct)
 
 void setFs(uint32_t fs)
 {
-  fs = clampi((int)fs, 2000, 200000);
+  fs = clampi((int)fs, FS_MIN_HZ, FS_MAX_HZ);
   gFs = fs;
   set_sample_rate(gFs);
   float nyq = 0.5f * (float)gFs;
@@ -100,6 +100,13 @@ void setXScale(uint8_t m)
 void setYScale(uint8_t m)
 {
   gYScale = (m ? YS_LIN : YS_DB);
+  gAxesDirty = true;
+  gHUDDirty = true;
+}
+
+void setHann(bool on)
+{
+  gUseHann = on;
   gAxesDirty = true;
   gHUDDirty = true;
 }

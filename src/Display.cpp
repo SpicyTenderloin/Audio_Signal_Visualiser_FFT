@@ -6,16 +6,6 @@
 #include <string.h>
 
 // -------------------- Axis helpers ----------------
-static inline float span_y_db()
-{
-  float span = gYMax_dB - gYMin_dB;
-  if (span < 10.0f)
-    span = 10.0f;
-  if (span > 140.0f)
-    span = 140.0f;
-  return span;
-}
-
 static inline int y_from_db(float dB)
 {
   float top = gYMax_dB;
@@ -472,21 +462,21 @@ void draw_hud_fps(bool force)
 void draw_line_spectrum(uint16_t N)
 {
   const float df = (float)gFs / (float)N;
-  const int Kny = N / 2;
 
   float nyq = 0.5f * (float)gFs;
   float fmax = gFmaxHz;
   if (fmax > nyq)
     fmax = nyq;
 
-  int Kvis = (int)floorf(fmax / df);
-  if (Kvis > Kny - 1)
-    Kvis = Kny - 1;
-  if (Kvis < 2)
-    Kvis = 2;
-
+  const int Kvis = visible_bin_count(N);
   const int bpp = bins_per_point(N);
   const float df_eff = df * (float)bpp;
+
+  // Loop-invariant for the log-scale branch below (doesn't depend on the
+  // per-column i), hoisted out so it's computed once per frame rather than
+  // once per plot column.
+  const float logFmin = 10.0f;
+  const float logFmaxRatio = fmaxf(fmax, logFmin * 1.01f) / logFmin;
 
   auto kc_for_x = [&](int i) -> int
   {
@@ -498,10 +488,8 @@ void draw_line_spectrum(uint16_t N)
     }
     else
     {
-      float fmin = 10.0f;
-      float fmaxl = fmaxf(fmax, fmin * 1.01f);
       float t = (float)i / (float)(PLOT_W - 1);
-      float f = fmin * powf(fmaxl / fmin, t);
+      float f = logFmin * powf(logFmaxRatio, t);
       int k = (int)roundf(f / df);
       return clampi(k, 1, Kvis - 1);
     }

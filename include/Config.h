@@ -66,3 +66,7 @@ static const float ADC_FS = 4095.0f; // 12-bit ADC raw counts
 
 // -------------------- Controls ---------------------
 static const uint16_t DEBOUNCE_MS = 25;
+
+// -------------------- Sample rate range -------------
+static const uint32_t FS_MIN_HZ = 2000;
+static const uint32_t FS_MAX_HZ = 200000;

@@ -31,3 +31,5 @@ void setAgg(uint8_t v);
 void setXScale(uint8_t m);
 // Selects dBFS (0) or linear-amplitude-% (1) Y axis scaling.
 void setYScale(uint8_t m);
+// Turns the Hann window on/off.
+void setHann(bool on);

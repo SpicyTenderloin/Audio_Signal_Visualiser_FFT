@@ -74,7 +74,10 @@ static void spectrum_task(void *pvParameters)
     gLastFFTus = micros() - fftStartUs;
 
     // --- Build power spectrum and prefix sums (skip DC) ---
-    int Kny = N / 2;
+    // Only up to the highest bin draw_line_spectrum() can ever read (bins
+    // beyond Fmax are never displayed) - with Fmax well under Nyquist,
+    // which is the common case, this is a real fraction of N/2 skipped.
+    int Kvis = visible_bin_count(N);
     // A windowed full-scale sine's FFT peak is attenuated by the window's
     // coherent gain, so scale the reference by it too (gWindowGain == 1.0
     // when gUseHann is off) - otherwise 0dBFS is never reachable.
@@ -82,7 +85,7 @@ static void spectrum_task(void *pvParameters)
     gRefPow = refAmp * refAmp; // power ref for dBFS
 
     gPrefixPow[0] = 0.0f; // so k0-1 works when k0==1
-    for (int k = 1; k < Kny; ++k)
+    for (int k = 1; k < Kvis; ++k)
     {
       float re = fft_buf[2 * k], im = fft_buf[2 * k + 1];
       float p = re * re + im * im; // power (no sqrt)

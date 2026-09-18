@@ -1,13 +1,16 @@
 #include "DSPUtils.h"
 #include "Globals.h"
 #include <math.h>
+#include <limits.h>
+#include <stdlib.h>
 
 void make_window_for_N(uint16_t N)
 {
+  const float step = 2.0f * (float)M_PI / (float)(N - 1);
   float sum = 0.0f;
   for (uint16_t i = 0; i < N; ++i)
   {
-    window_buf[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (N - 1)));
+    window_buf[i] = 0.5f * (1.0f - cosf(step * i));
     sum += window_buf[i];
   }
   // Coherent gain (mean window value): a windowed full-scale sine's FFT peak
@@ -57,13 +60,59 @@ void format_freq_label(char *out, size_t n, float fHz)
 
 int bins_per_point(uint16_t N)
 {
-  float df = (float)gFs / (float)N;
-  int Kvis = (int)floorf(fminf(gFmaxHz, 0.5f * (float)gFs) / df);
-  if (Kvis < 2)
-    Kvis = 2;
+  int Kvis = visible_bin_count(N);
   float base = (float)Kvis / (float)PLOT_W;
   int bpp = (int)roundf(base * (float)gAgg);
   if (bpp < 1)
     bpp = 1;
   return bpp;
+}
+
+int compute_visible_bins(uint16_t N, float fs, float fmax)
+{
+  float df = fs / (float)N;
+  int Kny = N / 2;
+  float nyq = 0.5f * fs;
+  float fmaxc = fminf(fmax, nyq);
+
+  int Kvis = (int)floorf(fmaxc / df);
+  if (Kvis > Kny - 1)
+    Kvis = Kny - 1;
+  if (Kvis < 2)
+    Kvis = 2;
+  return Kvis;
+}
+
+int visible_bin_count(uint16_t N)
+{
+  return compute_visible_bins(N, (float)gFs, gFmaxHz);
+}
+
+FsNRecommendation recommend_fs_n(float fmaxHz)
+{
+  FsNRecommendation best{FS_MIN_HZ, N_CHOICES[0], 0};
+  int bestScore = INT_MAX;
+  int numChoices = sizeof(N_CHOICES) / sizeof(N_CHOICES[0]);
+
+  for (int i = 0; i < numChoices; i++)
+  {
+    uint16_t N = N_CHOICES[i];
+    // The Fs that would land the visible bin count exactly on PLOT_W for
+    // this N (df == fmaxHz/PLOT_W, i.e. one bin per pixel across 0..fmax).
+    float idealFs = fmaxHz * (float)N / (float)PLOT_W;
+    uint32_t fs = (uint32_t)clampf(idealFs, (float)FS_MIN_HZ, (float)FS_MAX_HZ);
+    int kvis = compute_visible_bins(N, (float)fs, fmaxHz);
+    int score = abs(kvis - PLOT_W);
+
+    // Prefer the closer match; on a tie, prefer the larger N - it's no
+    // worse a match and gives more headroom (finer achievable df) if fmax
+    // is lowered again later without changing fs.
+    if (score < bestScore || (score == bestScore && N > best.N))
+    {
+      bestScore = score;
+      best = {fs, N, kvis};
+    }
+  }
+
+  return best;
 }
