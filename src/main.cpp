@@ -22,7 +22,23 @@ void setup()
   Serial.begin(115200);
   delay(50);
   Serial.println();
-  Serial.println(F("FFT Spectrum (Line) - I2S/DMA ADC, Fs default 40 kHz (serial-adjustable), Fmax=horizontal zoom"));
+  Serial.println(F("FFT Spectrum (Line) - I2S/DMA ADC, Fmax=horizontal zoom, Fs/N auto-tuned for fidelity"));
+
+  // Start with Fmax acting as horizontal zoom, and Fs/N chosen for the best
+  // fidelity at that Fmax (recommend_fs_n(), DSPUtils.cpp): the fs=/n= combo
+  // whose visible bin count (0..Fmax) best fills the plot's pixel width -
+  // set before anything below reads gFs/gNidx, so it takes effect from boot.
+  gFmaxFollowNyq = false;
+  gFmaxHz = 2500.0f;
+  FsNRecommendation rec = recommend_fs_n(gFmaxHz);
+  gFs = rec.fs;
+  for (uint8_t i = 0; i < sizeof(N_CHOICES) / sizeof(N_CHOICES[0]); i++)
+    if (N_CHOICES[i] == rec.N)
+    {
+      gNidx = i;
+      break;
+    }
+
   print_controls();
   print_stats();
   print_prompt();
@@ -76,10 +92,6 @@ void setup()
 
   // ADC + I2S/DMA capture (mic sampling into the circular buffer)
   init_audio_capture();
-
-  // Start with Fmax acting as horizontal zoom, clamped to Nyquist
-  gFmaxFollowNyq = false;
-  gFmaxHz = clampf(2500.0f, 50.0f, 0.5f * (float)gFs);
 
   // FFT/draw runs on core 0 so button/serial polling on core 1 (loop())
   // never waits on FFT compute or SPI draw time. It performs the first

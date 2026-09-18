@@ -104,10 +104,11 @@ FsNRecommendation recommend_fs_n(float fmaxHz)
     int kvis = compute_visible_bins(N, (float)fs, fmaxHz);
     int score = abs(kvis - PLOT_W);
 
-    // Prefer the closer match; on a tie, prefer the larger N - it's no
-    // worse a match and gives more headroom (finer achievable df) if fmax
-    // is lowered again later without changing fs.
-    if (score < bestScore || (score == bestScore && N > best.N))
+    // Prefer the closer match. On a tie, prefer the *smaller* N: since
+    // idealFs scales linearly with N, a tie means df (= fs/N) and the
+    // window duration (= N/fs) come out identical either way - so a tied
+    // larger N buys nothing but more FFT compute for the same fidelity.
+    if (score < bestScore || (score == bestScore && N < best.N))
     {
       bestScore = score;
       best = {fs, N, kvis};

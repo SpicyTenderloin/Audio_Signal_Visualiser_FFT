@@ -3,11 +3,14 @@
 
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
+// gFs/gNidx/gFmaxHz's real starting values are set in setup() via
+// recommend_fs_n() (best fidelity for the default Fmax) before anything
+// reads them - these are just fallbacks in case that were ever skipped.
 volatile uint32_t gFs = 40000;
 volatile uint16_t gFPS = 120;
 
 const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
-volatile uint8_t gNidx = 5; // default N=1024 (index 5)
+volatile uint8_t gNidx = 5; // N=1024
 volatile uint8_t gAgg = 1;
 volatile float gFmaxHz = 2500.0f;
 volatile bool gFmaxFollowNyq = false;
