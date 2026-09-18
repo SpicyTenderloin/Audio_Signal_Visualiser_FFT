@@ -56,7 +56,16 @@ static void capture_drain_task(void *pvParameters)
   for (;;)
   {
     size_t bytesRead = 0;
-    i2s_read(I2S_PORT, raw, sizeof(raw), &bytesRead, portMAX_DELAY);
+    esp_err_t err = i2s_read(I2S_PORT, raw, sizeof(raw), &bytesRead, portMAX_DELAY);
+    if (err != ESP_OK || bytesRead == 0)
+    {
+      // Guard against ever busy-spinning this task if a read fails or
+      // returns instantly instead of blocking - at this task's priority,
+      // a tight spin here would starve everything else on its core.
+      vTaskDelay(1);
+      continue;
+    }
+
     size_t n = bytesRead / sizeof(uint16_t);
     for (size_t i = 0; i < n; i++)
     {
@@ -94,5 +103,12 @@ void init_audio_capture()
 
   gCapWritePos = 0;
 
-  xTaskCreatePinnedToCore(capture_drain_task, "capture", 4096, nullptr, 2, nullptr, 1);
+  // Pinned to core 0 (with spectrum_task), not core 1 - loop() there handles
+  // buttons/serial, and this task must never be able to contend with it: if
+  // i2s_read() ever misbehaves (fails, or returns without truly blocking),
+  // a task at this priority spinning on core 1 would completely lock out
+  // button/serial polling. Core 0 has the same risk in principle, but
+  // starves the display instead of input handling, and the guard above
+  // caps how bad that can get either way.
+  xTaskCreatePinnedToCore(capture_drain_task, "capture", 4096, nullptr, 2, nullptr, 0);
 }
