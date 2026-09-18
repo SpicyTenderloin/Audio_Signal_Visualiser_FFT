@@ -72,6 +72,39 @@ static inline int y_from_linear(float frac)
   return y;
 }
 
+// Last frame's per-column plot row, so draw_line_spectrum() can erase only
+// the pixels it actually touched instead of clearing the whole plot rect
+// every frame. Invalidated whenever the plot area gets wiped some other way
+// (a full draw_axes() redraw).
+static int16_t s_prevLineY[PLOT_W];
+static bool s_prevLineValid = false;
+
+// Draws the connected polyline described by yArr (one row per column) in
+// the given color. Used both to erase the previous frame's line (color =
+// COL_BG) and to draw the new one (color = COL_LINE).
+static void draw_polyline(const int16_t *yArr, uint16_t color)
+{
+  bool havePrev = false;
+  int prevY = 0;
+  for (int i = 0; i < PLOT_W; ++i)
+  {
+    int y = yArr[i];
+    int x = PLOT_X + i;
+    if (havePrev)
+    {
+      int y0 = (y < prevY) ? y : prevY;
+      int h = abs(y - prevY) + 1;
+      tft.writeFastVLine(x, y0, h, color);
+    }
+    else
+    {
+      tft.writePixel(x, y, color);
+      havePrev = true;
+    }
+    prevY = y;
+  }
+}
+
 void draw_axes(uint16_t N)
 {
   tft.fillScreen(COL_BG);
@@ -263,6 +296,7 @@ void draw_axes(uint16_t N)
     }
   }
 
+  s_prevLineValid = false; // whole screen just got wiped, nothing to erase next frame
   gAxesDirty = false;
   gHUDDirty = true;
 }
@@ -298,9 +332,6 @@ void draw_hud(uint16_t N, float df_eff)
 
 void draw_line_spectrum(uint16_t N)
 {
-  tft.startWrite(); // batch the plot only
-  tft.writeFillRect(PLOT_X, PLOT_Y, PLOT_W, PLOT_H, COL_BG);
-
   const float df = (float)gFs / (float)N;
   const int Kny = N / 2;
 
@@ -337,9 +368,9 @@ void draw_line_spectrum(uint16_t N)
     }
   };
 
-  bool havePrev = false;
-  int prevY = 0;
-
+  // Compute this frame's row per column first (no drawing yet), so the
+  // actual SPI writes below only ever touch the pixels that changed.
+  int16_t yArr[PLOT_W];
   for (int i = 0; i < PLOT_W; ++i)
   {
     int kc = kc_for_x(i);
@@ -354,7 +385,6 @@ void draw_line_spectrum(uint16_t N)
     float sumP = gPrefixPow[k1] - gPrefixPow[k0 - 1];
     float meanP = sumP / (float)(k1 - k0 + 1);
 
-    int x = PLOT_X + i;
     int y;
     if (gYScale == YS_DB)
     {
@@ -367,22 +397,18 @@ void draw_line_spectrum(uint16_t N)
       float frac = (meanP > 0.0f && gRefPow > 0.0f) ? sqrtf(meanP / gRefPow) : 0.0f;
       y = y_from_linear(frac);
     }
-
-    if (havePrev)
-    {
-      int y0 = (y < prevY) ? y : prevY;
-      int h = abs(y - prevY) + 1;
-      tft.writeFastVLine(x, y0, h, COL_LINE);
-    }
-    else
-    {
-      tft.writePixel(x, y, COL_LINE);
-      havePrev = true;
-    }
-    prevY = y;
+    yArr[i] = (int16_t)y;
   }
 
-  tft.endWrite(); // end plot batch
+  tft.startWrite(); // batch the plot only
+  if (s_prevLineValid)
+    draw_polyline(s_prevLineY, COL_BG); // erase exactly what last frame drew...
+  draw_polyline(yArr, COL_LINE);        // ...instead of clearing the whole plot rect
+  tft.endWrite();                       // end plot batch
+
+  for (int i = 0; i < PLOT_W; ++i)
+    s_prevLineY[i] = yArr[i];
+  s_prevLineValid = true;
 
   if (gHUDDirty)
   {

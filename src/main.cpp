@@ -38,10 +38,12 @@ void setup()
   pinMode(VU6, OUTPUT);
   setVU(0);
 
-  // TFT SPI init — use 40 MHz for stability on all panels
+  // TFT SPI init. 80 MHz is the ESP32 SPI peripheral's practical ceiling; drop
+  // back to 40 MHz (or lower) if your wiring (long jumpers/breadboard) shows
+  // display glitches/tearing at this speed.
   SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
   tft.begin();
-  tft.setSPISpeed(40000000);
+  tft.setSPISpeed(80000000);
   tft.setRotation(1);
 
   // Quick splash so we know the panel is alive
