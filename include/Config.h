@@ -57,7 +57,9 @@ static const int BASE_Y = PLOT_Y + PLOT_H - 1;
 #define COL_LINE ILI9341_CYAN
 
 // -------------------- Buffers ---------------------
-#define FFT_MAX 8192
+// esp-dsp's bundled FFT table generator caps out at 4096 (CONFIG_DSP_MAX_FFT_SIZE,
+// baked into this precompiled library) - dsps_fft2r_init_fc32() fails above that.
+#define FFT_MAX 4096
 
 // -------------------- Magnitude scaling -----------
 static const float ADC_FS = 4095.0f; // 12-bit ADC raw counts

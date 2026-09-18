@@ -56,8 +56,20 @@ void setup()
   delay(150);
   tft.fillScreen(COL_BG);
 
-  // esp-dsp init (real FFT tables, sized for the largest N we support)
-  dsps_fft2r_init_fc32(nullptr, FFT_MAX);
+  // esp-dsp init (real FFT tables, sized for the largest N we support).
+  // esp-dsp's table generator has a hard cap (CONFIG_DSP_MAX_FFT_SIZE, 4096
+  // in this build) - if FFT_MAX ever exceeds it, this fails and every FFT
+  // call afterwards runs against uninitialized tables, so check it rather
+  // than silently continuing into an eventual crash.
+  esp_err_t fftInitErr = dsps_fft2r_init_fc32(nullptr, FFT_MAX);
+  if (fftInitErr != ESP_OK)
+  {
+    Serial.printf("FATAL: dsps_fft2r_init_fc32(FFT_MAX=%d) failed (err=%d). "
+                  "FFT_MAX likely exceeds esp-dsp's CONFIG_DSP_MAX_FFT_SIZE. Halting.\r\n",
+                  FFT_MAX, (int)fftInitErr);
+    while (true)
+      delay(1000);
+  }
 
   // Window for the default FFT length
   make_window_for_N(N_CHOICES[gNidx]);

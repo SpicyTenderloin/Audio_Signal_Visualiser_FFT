@@ -19,7 +19,7 @@ void print_controls()
   Serial.println(F("  help                # show this help"));
   Serial.println(F("  stats               # print current settings"));
   Serial.println(F("  fs=2000..200000     # set sample rate, e.g. fs=15000"));
-  Serial.println(F("  n=32|64|128|256|512|1024|2048|4096|8192   # e.g. n=512"));
+  Serial.println(F("  n=32|64|128|256|512|1024|2048|4096   # e.g. n=512"));
   Serial.println(F("  fps=10..120         # e.g. fps=60"));
   Serial.println(F("  agg=1..64           # e.g. agg=4 (coarser plot)"));
   Serial.println(F("  xscale=lin|log      # set X axis scale, e.g. xscale=lin"));
