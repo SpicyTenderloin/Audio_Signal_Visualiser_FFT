@@ -88,6 +88,13 @@ int visible_bin_count(uint16_t N)
   return compute_visible_bins(N, (float)gFs, gFmaxHz);
 }
 
+// This mic input has no analog anti-aliasing filter, so Fs can't just chase
+// the bare minimum for resolution: without headroom, out-of-band noise
+// folds straight into the displayed range as it's pushed toward Nyquist.
+// Requiring Nyquist to sit at least this many times above fmax keeps a
+// real margin before that happens.
+static const float FIDELITY_OVERSAMPLE_MARGIN = 4.0f;
+
 FsNRecommendation recommend_fs_n(float fmaxHz)
 {
   FsNRecommendation best{FS_MIN_HZ, N_CHOICES[0], 0};
@@ -98,17 +105,23 @@ FsNRecommendation recommend_fs_n(float fmaxHz)
   {
     uint16_t N = N_CHOICES[i];
     // The Fs that would land the visible bin count exactly on PLOT_W for
-    // this N (df == fmaxHz/PLOT_W, i.e. one bin per pixel across 0..fmax).
-    float idealFs = fmaxHz * (float)N / (float)PLOT_W;
+    // this N (df == fmaxHz/PLOT_W, i.e. one bin per pixel across 0..fmax) -
+    // but never below the anti-aliasing margin floor, even if that means
+    // under-using the plot width at this N (reflected in a worse score,
+    // so a larger N that can hit both constraints wins instead).
+    float idealFsForResolution = fmaxHz * (float)N / (float)PLOT_W;
+    float minFsForMargin = 2.0f * FIDELITY_OVERSAMPLE_MARGIN * fmaxHz;
+    float idealFs = fmaxf(idealFsForResolution, minFsForMargin);
     uint32_t fs = (uint32_t)clampf(idealFs, (float)FS_MIN_HZ, (float)FS_MAX_HZ);
     int kvis = compute_visible_bins(N, (float)fs, fmaxHz);
     int score = abs(kvis - PLOT_W);
 
-    // Prefer the closer match. On a tie, prefer the *smaller* N: since
-    // idealFs scales linearly with N, a tie means df (= fs/N) and the
-    // window duration (= N/fs) come out identical either way - so a tied
-    // larger N buys nothing but more FFT compute for the same fidelity.
-    if (score < bestScore || (score == bestScore && N < best.N))
+    // Prefer the closer match. On a tie, prefer the *larger* N: once the
+    // margin floor stops binding (idealFsForResolution alone exceeds it),
+    // fs scales up with N right along with it, so a bigger N in that
+    // regime buys more real Nyquist headroom above fmax, not just the same
+    // resolution again.
+    if (score < bestScore || (score == bestScore && N > best.N))
     {
       bestScore = score;
       best = {fs, N, kvis};
