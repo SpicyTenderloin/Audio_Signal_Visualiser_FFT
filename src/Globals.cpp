@@ -19,6 +19,7 @@ volatile YScaleMode gYScale = YS_DB;
 
 bool gUseHann = true;
 bool gPaused = false;
+volatile float gWindowGain = 1.0f; // recomputed by make_window_for_N()
 
 float fft_buf[2 * FFT_MAX];
 float window_buf[FFT_MAX];
@@ -28,6 +29,5 @@ volatile uint16_t gDC = 2048;
 bool gAxesDirty = true;
 bool gHUDDirty = true;
 
-float gPow[FFT_MAX / 2];
 float gPrefixPow[FFT_MAX / 2];
 float gRefPow = 1.0f;

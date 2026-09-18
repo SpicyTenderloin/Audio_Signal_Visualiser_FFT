@@ -4,10 +4,17 @@
 
 void make_window_for_N(uint16_t N)
 {
+  float sum = 0.0f;
   for (uint16_t i = 0; i < N; ++i)
   {
     window_buf[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (N - 1)));
+    sum += window_buf[i];
   }
+  // Coherent gain (mean window value): a windowed full-scale sine's FFT peak
+  // is attenuated by this factor vs. an unwindowed one, so the dBFS
+  // reference has to be scaled by it too, or 0dBFS becomes unreachable
+  // whenever the window is enabled.
+  gWindowGain = sum / (float)N;
 }
 
 float nice_step_125(float rough)

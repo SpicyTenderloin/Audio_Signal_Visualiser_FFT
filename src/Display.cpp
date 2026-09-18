@@ -87,7 +87,8 @@ static bool s_prevLineValid = false;
 // COL_BG, or it punches gridline pixels out wherever the old trace crossed
 // them.
 static uint16_t s_rowBG[PLOT_H];
-static bool s_colIsVGrid[PLOT_W];
+// COL_BG doubles as "no vertical gridline in this column" - no separate
+// bool array needed, since a real gridline color is never COL_BG.
 static uint16_t s_colVGridColor[PLOT_W];
 
 // True background color at plot column i (0 = PLOT_X), row r (screen Y).
@@ -96,7 +97,7 @@ static inline uint16_t bg_at(int i, int r)
   uint16_t rowColor = s_rowBG[r - PLOT_Y];
   if (rowColor != COL_BG)
     return rowColor;
-  if (s_colIsVGrid[i])
+  if (s_colVGridColor[i] != COL_BG)
     return s_colVGridColor[i];
   return COL_BG;
 }
@@ -182,7 +183,7 @@ void draw_axes(uint16_t N)
   tft.drawFastVLine(PLOT_X - 1, PLOT_Y, PLOT_H, COL_AX);
 
   for (int i = 0; i < PLOT_W; ++i)
-    s_colIsVGrid[i] = false;
+    s_colVGridColor[i] = COL_BG;
 
   // X ticks, labels, and vertical gridlines (LIN or LOG)
   auto draw_xticks = [&]()
@@ -212,7 +213,6 @@ void draw_axes(uint16_t N)
         int col = x - PLOT_X;
         if (col >= 0 && col < PLOT_W)
         {
-          s_colIsVGrid[col] = true;
           s_colVGridColor[col] = gridColor;
         }
       }
@@ -262,7 +262,6 @@ void draw_axes(uint16_t N)
           int col = x - PLOT_X;
           if (col >= 0 && col < PLOT_W)
           {
-            s_colIsVGrid[col] = true;
             s_colVGridColor[col] = gridColor;
           }
         }

@@ -21,7 +21,6 @@
 // of the frame rate collapsing as N grows.
 static void spectrum_task(void *pvParameters)
 {
-  static int16_t frame[FFT_MAX];
   uint32_t lastPos = capture_write_pos();
 
   for (;;)
@@ -46,21 +45,19 @@ static void spectrum_task(void *pvParameters)
     }
     lastPos = pos; // always take the freshest window rather than building a backlog
 
-    capture_read_window(frame, N, pos);
-
-    // Peak (for the VU meter) over this window
+    // Read straight out of the capture ring buffer into fft_buf, windowing
+    // as we go - no intermediate raw-sample buffer needed. Peak (for the VU
+    // meter) is tracked from the same pass, pre-window.
+    uint32_t start = pos - N;
     int16_t peakAbs = 0;
     for (uint16_t i = 0; i < N; i++)
     {
-      int16_t a = frame[i] >= 0 ? frame[i] : (int16_t)-frame[i];
+      int16_t s = capture_sample_at(start + i);
+      int16_t a = s >= 0 ? s : (int16_t)-s;
       if (a > peakAbs)
         peakAbs = a;
-    }
 
-    // FFT input: apply the window (if enabled) and build the complex signal
-    for (uint16_t i = 0; i < N; i++)
-    {
-      float v = (float)frame[i];
+      float v = (float)s;
       if (gUseHann)
         v *= window_buf[i];
       fft_buf[2 * i] = v;
@@ -72,15 +69,17 @@ static void spectrum_task(void *pvParameters)
 
     // --- Build power spectrum and prefix sums (skip DC) ---
     int Kny = N / 2;
-    float refAmp = (N / 2.0f) * ADC_FS; // amplitude ref
-    gRefPow = refAmp * refAmp;          // power ref for dBFS
+    // A windowed full-scale sine's FFT peak is attenuated by the window's
+    // coherent gain, so scale the reference by it too (gWindowGain == 1.0
+    // when gUseHann is off) - otherwise 0dBFS is never reachable.
+    float refAmp = (N / 2.0f) * ADC_FS * (gUseHann ? gWindowGain : 1.0f);
+    gRefPow = refAmp * refAmp; // power ref for dBFS
 
     gPrefixPow[0] = 0.0f; // so k0-1 works when k0==1
     for (int k = 1; k < Kny; ++k)
     {
       float re = fft_buf[2 * k], im = fft_buf[2 * k + 1];
       float p = re * re + im * im; // power (no sqrt)
-      gPow[k] = p;
       gPrefixPow[k] = gPrefixPow[k - 1] + p;
     }
 

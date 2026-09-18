@@ -7,16 +7,6 @@
 inline int clampi(int v, int lo, int hi) { return (v < lo) ? lo : ((v > hi) ? hi : v); }
 inline float clampf(float v, float lo, float hi) { return (v < lo) ? lo : ((v > hi) ? hi : v); }
 
-// -------------------- Magnitude scaling -----------
-inline float fft_mag_fullscale(uint16_t N) { return (N / 2.0f) * ADC_FS; }
-inline float to_dBFS(float mag, uint16_t N)
-{
-  float ref = fft_mag_fullscale(N);
-  if (mag <= 1e-9f)
-    return -120.0f;
-  return 20.0f * log10f(mag / ref);
-}
-
 // -------------------- Window function ---------------------
 // Fills window_buf[0..N) with a Hann window for the given FFT length.
 void make_window_for_N(uint16_t N);

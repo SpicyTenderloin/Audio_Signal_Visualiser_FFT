@@ -37,6 +37,7 @@ extern volatile YScaleMode gYScale;
 
 extern bool gUseHann;
 extern bool gPaused;
+extern volatile float gWindowGain; // coherent gain (mean) of window_buf for the current N; 1.0 when gUseHann is off
 
 // -------------------- FFT / sample buffers -----------
 extern float fft_buf[2 * FFT_MAX];
@@ -49,7 +50,6 @@ extern volatile uint16_t gDC;
 extern bool gAxesDirty;
 extern bool gHUDDirty;
 
-// --- Fast draw (power + prefix sums) ---
-extern float gPow[FFT_MAX / 2];       // power per bin (k=0..Kny-1), skip 0 for display
+// --- Fast draw (prefix sums over per-bin power) ---
 extern float gPrefixPow[FFT_MAX / 2]; // prefix sums for O(1) bin-range averages
 extern float gRefPow;                 // full-scale power for dBFS reference

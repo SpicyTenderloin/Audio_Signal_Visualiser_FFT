@@ -18,7 +18,7 @@ void IRAM_ATTR onTimer()
   int16_t centered = (int16_t)raw - (int16_t)gDC;
 
   uint32_t pos = gCapWritePos;
-  capBuf[pos & (CAP_BUF_LEN - 1)] = centered;
+  capBuf[pos % CAP_BUF_LEN] = centered;
   gCapWritePos = pos + 1; // single 32-bit store: atomic w.r.t. the reading core
 }
 
@@ -49,11 +49,9 @@ uint32_t capture_write_pos()
   return gCapWritePos;
 }
 
-void capture_read_window(int16_t *out, uint16_t N, uint32_t endPos)
+int16_t capture_sample_at(uint32_t absPos)
 {
-  uint32_t start = endPos - N;
-  for (uint16_t i = 0; i < N; i++)
-    out[i] = capBuf[(start + i) & (CAP_BUF_LEN - 1)];
+  return capBuf[absPos % CAP_BUF_LEN];
 }
 
 void init_audio_capture()

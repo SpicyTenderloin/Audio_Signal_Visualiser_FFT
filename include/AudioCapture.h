@@ -4,11 +4,14 @@
 #include "Config.h"
 
 // -------------------- Hardware Timer Capture -------
-// Circular capture buffer length in samples (power of two, for fast masking
-// instead of modulo). Sized to 2x the largest supported FFT length so the
-// consumer always has a full buffer's worth of headroom behind the ISR
-// write pointer before a window it is copying could be overwritten.
-#define CAP_BUF_LEN (2 * FFT_MAX)
+// Circular capture buffer length in samples: FFT_MAX plus 50% headroom, so
+// the consumer always has margin behind the ISR write pointer before a
+// window it is reading could get overwritten. That headroom only has to
+// outlast a few microseconds of per-sample reads, even at the fastest
+// sample rate (2048 samples of headroom at FFT_MAX=4096 is >50ms at 40kHz),
+// so 50% is already generous - it doesn't need FFT_MAX's old 100% margin.
+// Not a power of two, so indexing uses modulo instead of a bitmask.
+#define CAP_BUF_LEN (FFT_MAX + FFT_MAX / 2)
 
 extern hw_timer_t *gTimer;
 
@@ -27,6 +30,6 @@ uint16_t quick_dc_estimate();
 // wraps at 2^32, but unsigned differences against it stay valid.
 uint32_t capture_write_pos();
 
-// Copies the N most recently captured samples (the window ending at
-// `endPos`, as returned by capture_write_pos()) into `out`.
-void capture_read_window(int16_t *out, uint16_t N, uint32_t endPos);
+// Returns the single captured sample at absolute position absPos (as
+// returned by/derived from capture_write_pos()).
+int16_t capture_sample_at(uint32_t absPos);
