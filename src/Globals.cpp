@@ -12,7 +12,7 @@ volatile float gFmaxHz = 2500.0f;
 volatile bool gFmaxFollowNyq = false;
 
 volatile float gYMax_dB = 0.0f; // default top
-volatile float gYMin_dB = -50.0f; // default bottom
+volatile float gYMin_dB = -40.0f; // default bottom
 
 volatile XScaleMode gXScale = XS_LIN;
 volatile YScaleMode gYScale = YS_DB;

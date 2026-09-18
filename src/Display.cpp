@@ -3,6 +3,7 @@
 #include "DSPUtils.h"
 #include <math.h>
 #include <limits.h>
+#include <string.h>
 
 // -------------------- Axis helpers ----------------
 static inline float span_y_db()
@@ -383,33 +384,61 @@ void draw_axes(uint16_t N)
   gHUDDirty = true;
 }
 
-// The HUD band is split into independently-redrawn regions so the once/sec
-// FPS update only has to touch the few digits that actually change, not
-// the "FPS:" label or the rest of the band - avoiding any visible flicker.
-// All share the same fixed baseline, since text size 1 is a known 8px tall
-// - no need for getTextBounds() just to vertically center it.
+// The HUD is a row of evenly-spaced fields, centered as a whole. The FPS
+// value is a fixed-width slot (HUD_FPS_VAL_CHARS digits) within the last
+// field, so its position stays put and draw_hud_fps() can redraw just those
+// digits once/sec without recomputing (or flickering) the rest of the row.
+// The default GFX font advances a fixed HUD_CHAR_W px/char at text size 1,
+// so field widths can be computed from string length alone.
 static const int HUD_TEXT_Y = SCREEN_H - HUD_H + (HUD_H - 8) / 2;
-static const int HUD_FPS_LABEL_W = 24; // "FPS:" at 6px/char
-static const int HUD_FPS_VAL_W = 24;   // up to 4 digits at 6px/char
-static const int HUD_FPS_W = HUD_FPS_LABEL_W + HUD_FPS_VAL_W;
-static const int HUD_FPS_X = SCREEN_W - HUD_FPS_W;
-static const int HUD_FPS_VAL_X = HUD_FPS_X + HUD_FPS_LABEL_W;
+static const int HUD_CHAR_W = 6;
+static const int HUD_GAP = 10; // even spacing between fields
+static const int HUD_FPS_VAL_CHARS = 3;
+
+static int s_hudFpsValX = 0; // set by draw_hud(), reused by draw_hud_fps()
 
 void draw_hud(uint16_t N, float df_eff)
 {
-  tft.fillRect(0, SCREEN_H - HUD_H, HUD_FPS_X + HUD_FPS_LABEL_W, HUD_H, COL_BG);
+  tft.fillRect(0, SCREEN_H - HUD_H, SCREEN_W, HUD_H, COL_BG);
 
-  char hud[80];
-  snprintf(hud, sizeof(hud), "Fs=%luHz  N=%u  Df=%.1fHz  Hann=%s",
-           (unsigned long)gFs, N, df_eff, gUseHann ? "ON" : "OFF");
+  char f0[24], f1[16], f2[20], f3[12];
+  snprintf(f0, sizeof(f0), "Fs=%luHz", (unsigned long)gFs);
+  snprintf(f1, sizeof(f1), "N=%u", N);
+  snprintf(f2, sizeof(f2), "Df=%.1fHz", df_eff);
+  snprintf(f3, sizeof(f3), "Hann=%s", gUseHann ? "ON" : "OFF");
+  static const char *f4 = "FPS:";
+
+  int w0 = (int)strlen(f0) * HUD_CHAR_W;
+  int w1 = (int)strlen(f1) * HUD_CHAR_W;
+  int w2 = (int)strlen(f2) * HUD_CHAR_W;
+  int w3 = (int)strlen(f3) * HUD_CHAR_W;
+  int w4 = (int)strlen(f4) * HUD_CHAR_W;
+  int wVal = HUD_FPS_VAL_CHARS * HUD_CHAR_W;
+
+  int total = w0 + w1 + w2 + w3 + (w4 + wVal) + HUD_GAP * 4;
+  int x = (SCREEN_W - total) / 2;
+  if (x < 0)
+    x = 0;
 
   tft.setTextSize(1);
-  tft.setCursor(4, HUD_TEXT_Y);
   tft.setTextColor(COL_TEXT, COL_BG);
-  tft.print(hud);
 
-  tft.setCursor(HUD_FPS_X, HUD_TEXT_Y);
-  tft.print("FPS:");
+  tft.setCursor(x, HUD_TEXT_Y);
+  tft.print(f0);
+  x += w0 + HUD_GAP;
+  tft.setCursor(x, HUD_TEXT_Y);
+  tft.print(f1);
+  x += w1 + HUD_GAP;
+  tft.setCursor(x, HUD_TEXT_Y);
+  tft.print(f2);
+  x += w2 + HUD_GAP;
+  tft.setCursor(x, HUD_TEXT_Y);
+  tft.print(f3);
+  x += w3 + HUD_GAP;
+  tft.setCursor(x, HUD_TEXT_Y);
+  tft.print(f4);
+  x += w4;
+  s_hudFpsValX = x; // value slot immediately follows the "FPS:" label
 
   gHUDDirty = false;
 
@@ -429,13 +458,13 @@ void draw_hud_fps(bool force)
     return;
   s_lastShown = shown;
 
-  tft.fillRect(HUD_FPS_VAL_X, SCREEN_H - HUD_H, HUD_FPS_VAL_W, HUD_H, COL_BG);
+  tft.fillRect(s_hudFpsValX, SCREEN_H - HUD_H, HUD_FPS_VAL_CHARS * HUD_CHAR_W, HUD_H, COL_BG);
 
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", shown);
 
   tft.setTextSize(1);
-  tft.setCursor(HUD_FPS_VAL_X, HUD_TEXT_Y);
+  tft.setCursor(s_hudFpsValX, HUD_TEXT_Y);
   tft.setTextColor(COL_TEXT, COL_BG);
   tft.print(buf);
 }
