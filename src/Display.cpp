@@ -402,7 +402,7 @@ void draw_hud(uint16_t N, float df_eff)
   tft.fillRect(0, SCREEN_H - HUD_H, SCREEN_W, HUD_H, COL_BG);
 
   char f0[24], f1[16], f2[20], f3[12];
-  snprintf(f0, sizeof(f0), "Fs=%luHz", (unsigned long)gFs);
+  snprintf(f0, sizeof(f0), "Fs=%.1fkHz", (double)gFs / 1000.0);
   snprintf(f1, sizeof(f1), "N=%u", N);
   snprintf(f2, sizeof(f2), "Df=%.1fHz", df_eff);
   snprintf(f3, sizeof(f3), "Hann=%s", gUseHann ? "ON" : "OFF");
