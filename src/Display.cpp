@@ -386,9 +386,9 @@ void draw_hud(uint16_t N, float df_eff)
 {
   tft.fillRect(0, SCREEN_H - HUD_H, SCREEN_W, HUD_H, COL_BG);
 
-  char hud[80];
-  snprintf(hud, sizeof(hud), "Fs=%luHz  N=%u  Df=%.1fHz  Hann=%s",
-           (unsigned long)gFs, N, df_eff, gUseHann ? "ON" : "OFF");
+  char hud[96];
+  snprintf(hud, sizeof(hud), "Fs=%luHz  N=%u  Df=%.1fHz  Hann=%s  FPS=%.0f",
+           (unsigned long)gFs, N, df_eff, gUseHann ? "ON" : "OFF", (double)gMeasuredFPS);
 
   tft.setTextSize(1);
   int16_t x1, y1;

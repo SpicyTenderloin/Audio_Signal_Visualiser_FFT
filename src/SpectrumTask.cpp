@@ -22,6 +22,8 @@
 static void spectrum_task(void *pvParameters)
 {
   uint32_t lastPos = capture_write_pos();
+  uint32_t fpsWindowStart = 0;
+  uint16_t fpsFrameCount = 0;
 
   for (;;)
   {
@@ -45,6 +47,8 @@ static void spectrum_task(void *pvParameters)
     }
     lastPos = pos; // always take the freshest window rather than building a backlog
 
+    uint32_t frameStartUs = micros();
+
     // Read straight out of the capture ring buffer into fft_buf, windowing
     // as we go - no intermediate raw-sample buffer needed. Peak (for the VU
     // meter) is tracked from the same pass, pre-window.
@@ -64,8 +68,10 @@ static void spectrum_task(void *pvParameters)
       fft_buf[2 * i + 1] = 0.0f;
     }
 
+    uint32_t fftStartUs = micros();
     dsps_fft2r_fc32(fft_buf, N);
     dsps_bit_rev_fc32(fft_buf, N);
+    gLastFFTus = micros() - fftStartUs;
 
     // --- Build power spectrum and prefix sums (skip DC) ---
     int Kny = N / 2;
@@ -93,6 +99,24 @@ static void spectrum_task(void *pvParameters)
       draw_hud(N, df_eff);
 
     setVU(vu_from_peakAbs(peakAbs));
+
+    gLastFrameUs = micros() - frameStartUs;
+
+    // Measured (actual) frame rate over a rolling 1s window - distinct from
+    // gFPS, the target cap. Nudges the HUD dirty so the on-screen number
+    // stays roughly live without redrawing it every single frame.
+    fpsFrameCount++;
+    uint32_t nowUs = micros();
+    if (fpsWindowStart == 0)
+      fpsWindowStart = nowUs;
+    uint32_t fpsElapsed = nowUs - fpsWindowStart;
+    if (fpsElapsed >= 1000000UL)
+    {
+      gMeasuredFPS = (float)fpsFrameCount * 1e6f / (float)fpsElapsed;
+      fpsFrameCount = 0;
+      fpsWindowStart = nowUs;
+      gHUDDirty = true;
+    }
 
     // FPS cap. A real (yielding) delay, not delayMicroseconds()/busy-wait: with
     // the hop now sized to arrive right on the FPS cadence, this task is ready

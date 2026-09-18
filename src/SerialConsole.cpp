@@ -40,10 +40,12 @@ void print_stats()
   float df_eff = (float)gFs / N * bpp;
   int hop = clampi((int)(gFs / gFPS), 1, N);
   float overlapPct = 100.0f * (1.0f - (float)hop / (float)N);
-  Serial.printf("Fs=%lu  N=%u  Df=%.2fHz  FPS=%u  BPP=%d  Overlap=%.0f%%  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
+  Serial.printf("Fs=%lu  N=%u  Df=%.2fHz  FPS(target)=%u  BPP=%d  Overlap=%.0f%%  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
                 (unsigned long)gFs, N, df_eff, gFPS, bpp, overlapPct, (gXScale == XS_LIN ? "LIN" : "LOG"),
                 (gYScale == YS_DB ? "dB" : "LIN"), gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
   Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
+  Serial.printf("FPS(actual)=%.1f  Frame=%.2fms  FFT=%.2fms\r\n",
+                (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0);
 }
 
 void print_prompt() { Serial.print("> "); }

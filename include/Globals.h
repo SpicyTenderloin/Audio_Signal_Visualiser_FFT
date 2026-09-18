@@ -52,4 +52,14 @@ extern bool gHUDDirty;
 
 // --- Fast draw (prefix sums over per-bin power) ---
 extern float gPrefixPow[FFT_MAX / 2]; // prefix sums for O(1) bin-range averages
+
+// -------------------- Performance stats -----------
+// Actual measured frame rate (frames/sec spectrum_task delivers), updated
+// once/sec - distinct from gFPS, which is only the *target* cap.
+extern volatile float gMeasuredFPS;
+// Time spent in the two FFT calls, and total compute+draw time, for the
+// most recently processed frame (microseconds). Excludes the idle wait for
+// fresh samples, so this is what actually competes for the frame budget.
+extern volatile uint32_t gLastFFTus;
+extern volatile uint32_t gLastFrameUs;
 extern float gRefPow;                 // full-scale power for dBFS reference

@@ -30,4 +30,8 @@ bool gAxesDirty = true;
 bool gHUDDirty = true;
 
 float gPrefixPow[FFT_MAX / 2];
+
+volatile float gMeasuredFPS = 0.0f;
+volatile uint32_t gLastFFTus = 0;
+volatile uint32_t gLastFrameUs = 0;
 float gRefPow = 1.0f;
