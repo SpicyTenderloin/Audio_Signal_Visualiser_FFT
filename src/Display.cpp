@@ -79,9 +79,30 @@ static inline int y_from_linear(float frac)
 static int16_t s_prevLineY[PLOT_W];
 static bool s_prevLineValid = false;
 
-// Draws the connected polyline described by yArr (one row per column) in
-// the given color. Used both to erase the previous frame's line (color =
-// COL_BG) and to draw the new one (color = COL_LINE).
+// The true background of each plot pixel, split into a per-row part (index
+// 0 = PLOT_Y) and a per-column part (index 0 = PLOT_X), rebuilt by
+// draw_axes() whenever it redraws. Horizontal gridlines are drawn after
+// vertical ones there, so at an intersection the row color wins - see
+// bg_at() below. Erasing the previous trace has to restore this, not flat
+// COL_BG, or it punches gridline pixels out wherever the old trace crossed
+// them.
+static uint16_t s_rowBG[PLOT_H];
+static bool s_colIsVGrid[PLOT_W];
+static uint16_t s_colVGridColor[PLOT_W];
+
+// True background color at plot column i (0 = PLOT_X), row r (screen Y).
+static inline uint16_t bg_at(int i, int r)
+{
+  uint16_t rowColor = s_rowBG[r - PLOT_Y];
+  if (rowColor != COL_BG)
+    return rowColor;
+  if (s_colIsVGrid[i])
+    return s_colVGridColor[i];
+  return COL_BG;
+}
+
+// Draws the connected polyline described by yArr (one row per column) in a
+// single flat color - used to draw the new trace.
 static void draw_polyline(const int16_t *yArr, uint16_t color)
 {
   bool havePrev = false;
@@ -101,6 +122,40 @@ static void draw_polyline(const int16_t *yArr, uint16_t color)
       tft.writePixel(x, y, color);
       havePrev = true;
     }
+    prevY = y;
+  }
+}
+
+// Erases the connected polyline described by yArr by restoring each pixel's
+// true background (s_rowBG) rather than flat COL_BG, so gridline rows the
+// old trace crossed come back instead of staying punched out. Runs of
+// identical background color are coalesced into one writeFastVLine call.
+static void erase_polyline(const int16_t *yArr)
+{
+  bool havePrev = false;
+  int prevY = 0;
+  for (int i = 0; i < PLOT_W; ++i)
+  {
+    int y = yArr[i];
+    int x = PLOT_X + i;
+    int y0 = havePrev ? ((y < prevY) ? y : prevY) : y;
+    int h = havePrev ? (abs(y - prevY) + 1) : 1;
+
+    int runStart = y0;
+    uint16_t runColor = bg_at(i, runStart);
+    for (int r = y0 + 1; r < y0 + h; ++r)
+    {
+      uint16_t c = bg_at(i, r);
+      if (c != runColor)
+      {
+        tft.writeFastVLine(x, runStart, r - runStart, runColor);
+        runStart = r;
+        runColor = c;
+      }
+    }
+    tft.writeFastVLine(x, runStart, (y0 + h) - runStart, runColor);
+
+    havePrev = true;
     prevY = y;
   }
 }
@@ -126,7 +181,10 @@ void draw_axes(uint16_t N)
   tft.drawFastHLine(PLOT_X, BASE_Y + 1, PLOT_W, COL_AX);
   tft.drawFastVLine(PLOT_X - 1, PLOT_Y, PLOT_H, COL_AX);
 
-  // X ticks & labels (LIN or LOG)
+  for (int i = 0; i < PLOT_W; ++i)
+    s_colIsVGrid[i] = false;
+
+  // X ticks, labels, and vertical gridlines (LIN or LOG)
   auto draw_xticks = [&]()
   {
     int labelY = BASE_Y + 10;
@@ -148,6 +206,15 @@ void draw_axes(uint16_t N)
         int x = PLOT_X + (int)roundf((f / fmax_draw) * (PLOT_W - 1));
         bool isMajor = fabsf(fmodf(f + 1e-3f, major)) < (0.02f * major);
         tft.drawFastVLine(x, BASE_Y + 1, isMajor ? 5 : 3, COL_AX);
+
+        uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
+        tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
+        int col = x - PLOT_X;
+        if (col >= 0 && col < PLOT_W)
+        {
+          s_colIsVGrid[col] = true;
+          s_colVGridColor[col] = gridColor;
+        }
       }
       for (float f = 0.0f; f <= fmax_draw + 0.01f * major; f += major)
       {
@@ -186,8 +253,18 @@ void draw_axes(uint16_t N)
           if (f < fmin || f > fmax)
             continue;
           int x = x_from_f(f);
-          int len = (mults[i] == 1) ? 5 : 3;
+          bool isMajor = (mults[i] == 1);
+          int len = isMajor ? 5 : 3;
           tft.drawFastVLine(x, BASE_Y + 1, len, COL_AX);
+
+          uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
+          tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
+          int col = x - PLOT_X;
+          if (col >= 0 && col < PLOT_W)
+          {
+            s_colIsVGrid[col] = true;
+            s_colVGridColor[col] = gridColor;
+          }
         }
       }
       struct Lab
@@ -220,6 +297,9 @@ void draw_axes(uint16_t N)
   // Y ticks. The topmost major tick's label carries the unit suffix (dB or
   // %, for full-scale amplitude), so the axis is self-labeling without
   // needing separate room for a unit caption.
+  for (int r = 0; r < PLOT_H; ++r)
+    s_rowBG[r] = COL_BG;
+
   if (gYScale == YS_DB)
   {
     float top = gYMax_dB, bot = gYMin_dB;
@@ -250,6 +330,7 @@ void draw_axes(uint16_t N)
         tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
       else
         tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID_MINOR);
+      s_rowBG[y - PLOT_Y] = major ? COL_GRID : COL_GRID_MINOR;
 
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
@@ -280,6 +361,7 @@ void draw_axes(uint16_t N)
         tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
       else
         tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID_MINOR);
+      s_rowBG[y - PLOT_Y] = major ? COL_GRID : COL_GRID_MINOR;
 
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
@@ -402,9 +484,9 @@ void draw_line_spectrum(uint16_t N)
 
   tft.startWrite(); // batch the plot only
   if (s_prevLineValid)
-    draw_polyline(s_prevLineY, COL_BG); // erase exactly what last frame drew...
-  draw_polyline(yArr, COL_LINE);        // ...instead of clearing the whole plot rect
-  tft.endWrite();                       // end plot batch
+    erase_polyline(s_prevLineY);   // restore true background (incl. gridlines) where the old trace was...
+  draw_polyline(yArr, COL_LINE);   // ...instead of clearing the whole plot rect
+  tft.endWrite();                  // end plot batch
 
   for (int i = 0; i < PLOT_W; ++i)
     s_prevLineY[i] = yArr[i];
