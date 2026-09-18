@@ -20,6 +20,17 @@ static const i2s_port_t I2S_PORT = I2S_NUM_0;
 static const int I2S_DMA_BUF_LEN = 256;
 static const int I2S_DMA_BUF_COUNT = 4;
 
+// I2S built-in-ADC mode is configured with a stereo (RIGHT_LEFT) frame
+// format, and the ADC actually converts once per *channel slot* - i.e.
+// twice per configured "frame" - so the true achieved sample rate is 2x
+// whatever's requested here. gFs (and all the frequency-axis math derived
+// from it) is meant to be the *true* rate, so halve it before handing it
+// to the I2S API to compensate.
+static inline uint32_t i2s_rate_for(uint32_t trueSampleRate)
+{
+  return trueSampleRate / 2;
+}
+
 uint16_t quick_dc_estimate()
 {
   uint32_t s = 0;
@@ -34,7 +45,7 @@ uint16_t quick_dc_estimate()
 void set_sample_rate(uint32_t fs)
 {
   fs = clampi((int)fs, FS_MIN_HZ, FS_MAX_HZ);
-  i2s_set_sample_rates(I2S_PORT, fs);
+  i2s_set_sample_rates(I2S_PORT, i2s_rate_for(fs));
 }
 
 uint32_t capture_write_pos()
@@ -93,7 +104,7 @@ void init_audio_capture()
 
   i2s_config_t i2s_config = {
       .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
-      .sample_rate = gFs,
+      .sample_rate = i2s_rate_for(gFs),
       .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
       .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
       .communication_format = I2S_COMM_FORMAT_STAND_I2S,
