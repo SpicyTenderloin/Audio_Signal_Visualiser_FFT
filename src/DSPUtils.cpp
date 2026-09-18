@@ -97,14 +97,13 @@ int visible_bin_count(uint16_t N)
 // Because N only comes in powers of two, the margin actually achieved
 // jumps in big discrete steps rather than scaling smoothly with this
 // constant: for the default fmax=2.5kHz, N=1024 only reaches ~1.9x
-// (confirmed by testing to cause visible aliasing), N=2048 reaches ~3.7x,
-// N=4096 reaches ~7.5x. Any value from just above the previous tier's
-// margin up to the next tier's actual margin picks the same N, so this is
-// tuned to land on the 2048 tier (~3.7x, unverified but clear of the 1.9x
-// tier that failed) rather than paying for 4096's ~7.5x - untested
-// whether that headroom is actually needed, so worth confirming on
-// hardware whether 2048 still looks clean before trusting it as default.
-static const float FIDELITY_OVERSAMPLE_MARGIN = 3.5f;
+// (visibly aliased - only content under ~500Hz stayed clean), N=2048
+// reaches ~3.7x (tested - still noticeably worse than 4096, despite
+// matching N=4096's Δf/window-duration exactly on paper; oversampling
+// margin evidently affects noise/aliasing cleanliness on this hardware
+// independently of matched frequency resolution), N=4096 reaches ~7.5x
+// (tested - looks visibly cleaner). Tuned to land on the 4096 tier.
+static const float FIDELITY_OVERSAMPLE_MARGIN = 4.0f;
 
 FsNRecommendation recommend_fs_n(float fmaxHz)
 {
