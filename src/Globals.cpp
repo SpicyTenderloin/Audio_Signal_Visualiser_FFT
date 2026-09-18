@@ -11,7 +11,7 @@ volatile uint8_t gAgg = 1;
 volatile float gFmaxHz = 2500.0f;
 volatile bool gFmaxFollowNyq = false;
 
-volatile float gYMax_dB = -20.0f; // default top
+volatile float gYMax_dB = 0.0f; // default top
 volatile float gYMin_dB = -50.0f; // default bottom
 
 volatile XScaleMode gXScale = XS_LIN;
