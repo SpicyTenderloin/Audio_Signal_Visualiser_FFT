@@ -2,7 +2,7 @@
 
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
-volatile uint32_t gFs = 12000;
+volatile uint32_t gFs = 40000;
 volatile uint16_t gFPS = 120;
 
 const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
