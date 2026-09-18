@@ -6,7 +6,7 @@ volatile uint32_t gFs = 12000;
 volatile uint16_t gFPS = 120;
 
 const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
-volatile uint8_t gNidx = 4; // default N=512 (index 4)
+volatile uint8_t gNidx = 5; // default N=1024 (index 5)
 volatile uint8_t gAgg = 1;
 volatile float gFmaxHz = 2500.0f;
 volatile bool gFmaxFollowNyq = false;
