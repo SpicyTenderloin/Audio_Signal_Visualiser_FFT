@@ -93,7 +93,18 @@ int visible_bin_count(uint16_t N)
 // folds straight into the displayed range as it's pushed toward Nyquist.
 // Requiring Nyquist to sit at least this many times above fmax keeps a
 // real margin before that happens.
-static const float FIDELITY_OVERSAMPLE_MARGIN = 4.0f;
+//
+// Because N only comes in powers of two, the margin actually achieved
+// jumps in big discrete steps rather than scaling smoothly with this
+// constant: for the default fmax=2.5kHz, N=1024 only reaches ~1.9x
+// (confirmed by testing to cause visible aliasing), N=2048 reaches ~3.7x,
+// N=4096 reaches ~7.5x. Any value from just above the previous tier's
+// margin up to the next tier's actual margin picks the same N, so this is
+// tuned to land on the 2048 tier (~3.7x, unverified but clear of the 1.9x
+// tier that failed) rather than paying for 4096's ~7.5x - untested
+// whether that headroom is actually needed, so worth confirming on
+// hardware whether 2048 still looks clean before trusting it as default.
+static const float FIDELITY_OVERSAMPLE_MARGIN = 3.5f;
 
 FsNRecommendation recommend_fs_n(float fmaxHz)
 {
@@ -116,12 +127,13 @@ FsNRecommendation recommend_fs_n(float fmaxHz)
     int kvis = compute_visible_bins(N, (float)fs, fmaxHz);
     int score = abs(kvis - PLOT_W);
 
-    // Prefer the closer match. On a tie, prefer the *larger* N: once the
-    // margin floor stops binding (idealFsForResolution alone exceeds it),
-    // fs scales up with N right along with it, so a bigger N in that
-    // regime buys more real Nyquist headroom above fmax, not just the same
-    // resolution again.
-    if (score < bestScore || (score == bestScore && N > best.N))
+    // Prefer the closer match. On a tie, prefer the *smaller* N: any N
+    // that reaches score 0 got there because idealFsForResolution alone
+    // already cleared the margin floor - so every such N has already
+    // satisfied the margin requirement on its own merits, and a larger
+    // one just spends more FFT compute for headroom beyond what was
+    // actually asked for.
+    if (score < bestScore || (score == bestScore && N < best.N))
     {
       bestScore = score;
       best = {fs, N, kvis};
