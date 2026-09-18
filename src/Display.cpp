@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "DSPUtils.h"
 #include <math.h>
+#include <limits.h>
 
 // -------------------- Axis helpers ----------------
 static inline float span_y_db()
@@ -382,33 +383,61 @@ void draw_axes(uint16_t N)
   gHUDDirty = true;
 }
 
+// The HUD band is split into independently-redrawn regions so the once/sec
+// FPS update only has to touch the few digits that actually change, not
+// the "FPS:" label or the rest of the band - avoiding any visible flicker.
+// All share the same fixed baseline, since text size 1 is a known 8px tall
+// - no need for getTextBounds() just to vertically center it.
+static const int HUD_TEXT_Y = SCREEN_H - HUD_H + (HUD_H - 8) / 2;
+static const int HUD_FPS_LABEL_W = 24; // "FPS:" at 6px/char
+static const int HUD_FPS_VAL_W = 24;   // up to 4 digits at 6px/char
+static const int HUD_FPS_W = HUD_FPS_LABEL_W + HUD_FPS_VAL_W;
+static const int HUD_FPS_X = SCREEN_W - HUD_FPS_W;
+static const int HUD_FPS_VAL_X = HUD_FPS_X + HUD_FPS_LABEL_W;
+
 void draw_hud(uint16_t N, float df_eff)
 {
-  tft.fillRect(0, SCREEN_H - HUD_H, SCREEN_W, HUD_H, COL_BG);
+  tft.fillRect(0, SCREEN_H - HUD_H, HUD_FPS_X + HUD_FPS_LABEL_W, HUD_H, COL_BG);
 
-  char hud[96];
-  snprintf(hud, sizeof(hud), "Fs=%luHz  N=%u  Df=%.1fHz  Hann=%s  FPS=%.0f",
-           (unsigned long)gFs, N, df_eff, gUseHann ? "ON" : "OFF", (double)gMeasuredFPS);
+  char hud[80];
+  snprintf(hud, sizeof(hud), "Fs=%luHz  N=%u  Df=%.1fHz  Hann=%s",
+           (unsigned long)gFs, N, df_eff, gUseHann ? "ON" : "OFF");
 
   tft.setTextSize(1);
-  int16_t x1, y1;
-  uint16_t tw, th;
-  tft.getTextBounds(hud, 0, 0, &x1, &y1, &tw, &th);
-
-  int tx = (SCREEN_W - (int)tw) / 2;
-  if (tx < 0)
-    tx = 0;
-  int ty = SCREEN_H - HUD_H + (HUD_H - (int)th) / 2;
-  if (ty < SCREEN_H - HUD_H)
-    ty = SCREEN_H - HUD_H;
-  if (ty > SCREEN_H - 8)
-    ty = SCREEN_H - 8;
-
-  tft.setCursor(tx, ty);
+  tft.setCursor(4, HUD_TEXT_Y);
   tft.setTextColor(COL_TEXT, COL_BG);
   tft.print(hud);
 
+  tft.setCursor(HUD_FPS_X, HUD_TEXT_Y);
+  tft.print("FPS:");
+
   gHUDDirty = false;
+
+  // force=true: draw_axes() may have just wiped these pixels with a
+  // full-screen clear, so the "unchanged" skip below can't apply here.
+  draw_hud_fps(true);
+}
+
+void draw_hud_fps(bool force)
+{
+  // Skip the redraw entirely if the displayed (rounded) value hasn't
+  // actually changed, so small float jitter around a whole number doesn't
+  // still flicker the digits once/sec.
+  static int s_lastShown = INT_MIN;
+  int shown = (int)lroundf(gMeasuredFPS);
+  if (!force && shown == s_lastShown)
+    return;
+  s_lastShown = shown;
+
+  tft.fillRect(HUD_FPS_VAL_X, SCREEN_H - HUD_H, HUD_FPS_VAL_W, HUD_H, COL_BG);
+
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", shown);
+
+  tft.setTextSize(1);
+  tft.setCursor(HUD_FPS_VAL_X, HUD_TEXT_Y);
+  tft.setTextColor(COL_TEXT, COL_BG);
+  tft.print(buf);
 }
 
 void draw_line_spectrum(uint16_t N)

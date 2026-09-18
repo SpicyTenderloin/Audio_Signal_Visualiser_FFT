@@ -103,8 +103,8 @@ static void spectrum_task(void *pvParameters)
     gLastFrameUs = micros() - frameStartUs;
 
     // Measured (actual) frame rate over a rolling 1s window - distinct from
-    // gFPS, the target cap. Nudges the HUD dirty so the on-screen number
-    // stays roughly live without redrawing it every single frame.
+    // gFPS, the target cap. Redraws just the small FPS box, not the whole
+    // HUD, so the rest of the status band doesn't flicker once/sec.
     fpsFrameCount++;
     uint32_t nowUs = micros();
     if (fpsWindowStart == 0)
@@ -115,7 +115,7 @@ static void spectrum_task(void *pvParameters)
       gMeasuredFPS = (float)fpsFrameCount * 1e6f / (float)fpsElapsed;
       fpsFrameCount = 0;
       fpsWindowStart = nowUs;
-      gHUDDirty = true;
+      draw_hud_fps();
     }
 
     // FPS cap. A real (yielding) delay, not delayMicroseconds()/busy-wait: with
