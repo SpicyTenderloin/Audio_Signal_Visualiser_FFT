@@ -51,7 +51,9 @@ struct FsNRecommendation
 // Finds the (Fs, N) combination whose visible bin count (0..fmaxHz) best
 // matches the plot's PLOT_W horizontal pixels - the point past which more
 // bins just get averaged together for display anyway, so bins beyond it
-// buy nothing, and fewer bins under-use the available width.
+// buy nothing, and fewer bins under-use the available width. Among the N that
+// fit nearly as well as the best, the smallest (cheapest FFT) is chosen, and Fs
+// never goes below the alias-safe floors (see DSPUtils.cpp and Config.h).
 FsNRecommendation recommend_fs_n(float fmaxHz);
 
 // The lowest Fs that keeps Nyquist at least FIDELITY_OVERSAMPLE_MARGIN

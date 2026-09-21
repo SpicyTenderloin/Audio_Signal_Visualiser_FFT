@@ -114,15 +114,22 @@ int visible_bin_count(uint16_t N)
   return compute_visible_bins(N, (float)gFs, gFmaxHz);
 }
 
-// This mic input has no analog anti-aliasing filter, so Fs can't just chase
-// the bare minimum for resolution: without headroom, out-of-band noise
-// folds straight into the displayed range as it's pushed toward Nyquist.
-// Requiring Nyquist to sit at least this many times above fmax keeps a
-// real margin before that happens.
+// The mic input has an analog low-pass ahead of the ADC, but it is not a brick
+// wall: a Bode-plot sweep shows the response roughly flat to about 3kHz, then
+// falling steeply - about 40dB below the 1kHz level by 6kHz, where the sweep
+// stopped. Fs still can't just chase the bare minimum for resolution: the
+// filter leaves real content between the displayed range and that roll-off,
+// and it folds straight into the display as Nyquist is pushed toward it.
+// Requiring Nyquist to sit at least this many times above fmax keeps a real
+// margin before that happens. The cutoff is planned to move up to about 20kHz;
+// then the analog filter no longer protects a narrower view from content between
+// fmax and 20kHz, so recommend_fs_n() also never goes below MIN_ALIAS_SAFE_FS_HZ
+// (2.4x the cutoff, Config.h) whatever fmax is - unless a digital low-pass is
+// added before decimating, which would lift that floor.
 //
 // Because N only comes in powers of two, the margin actually achieved
 // jumps in big discrete steps rather than scaling smoothly with this
-// constant: for the default fmax=2.5kHz, N=1024 only reaches ~1.9x
+// constant: for fmax=2.5kHz (the earlier default), N=1024 only reaches ~1.9x
 // (visibly aliased - only content under ~500Hz stayed clean), N=2048
 // reaches ~3.7x (tested - still noticeably worse than 4096, despite
 // matching N=4096's Δf/window-duration exactly on paper; oversampling
@@ -136,39 +143,54 @@ float min_alias_safe_fs(float fmaxHz)
   return 2.0f * FIDELITY_OVERSAMPLE_MARGIN * fmaxHz;
 }
 
+// How far short of the best fit an N may fall and still be preferred for being
+// smaller, in bins: about 7% of the plot width. A larger N only spends more FFT
+// compute to fill a few more pixels.
+static const int FIT_TOLERANCE_BINS = 20;
+
 FsNRecommendation recommend_fs_n(float fmaxHz)
 {
-  FsNRecommendation best{FS_MIN_HZ, N_CHOICES[0], 0};
-  int bestScore = INT_MAX;
-  int numChoices = sizeof(N_CHOICES) / sizeof(N_CHOICES[0]);
+  const int numChoices = sizeof(N_CHOICES) / sizeof(N_CHOICES[0]);
 
-  for (int i = 0; i < numChoices; i++)
+  // The (Fs, N) that N-choice i would be run at, and how far its visible bin
+  // count lands from the plot width (its score - lower is a better fit).
+  auto candidate = [&](int i, int *scoreOut) -> FsNRecommendation
   {
     uint16_t N = N_CHOICES[i];
     // The Fs that would land the visible bin count exactly on PLOT_W for
     // this N (df == fmaxHz/PLOT_W, i.e. one bin per pixel across 0..fmax) -
-    // but never below the anti-aliasing margin floor, even if that means
-    // under-using the plot width at this N (reflected in a worse score,
-    // so a larger N that can hit both constraints wins instead).
+    // but never below the anti-aliasing margin floor, nor below the floor the
+    // analog filter's cutoff sets (MIN_ALIAS_SAFE_FS_HZ), even if that means
+    // under-using the plot width at this N (reflected in a worse score, so a
+    // larger N that can hit every constraint wins instead).
     float idealFsForResolution = fmaxHz * (float)N / (float)PLOT_W;
     float minFsForMargin = 2.0f * FIDELITY_OVERSAMPLE_MARGIN * fmaxHz;
-    float idealFs = fmaxf(idealFsForResolution, minFsForMargin);
+    float idealFs = fmaxf(fmaxf(idealFsForResolution, minFsForMargin), (float)MIN_ALIAS_SAFE_FS_HZ);
     uint32_t fs = (uint32_t)clampf(idealFs, (float)FS_MIN_HZ, (float)FS_MAX_HZ);
     int kvis = compute_visible_bins(N, (float)fs, fmaxHz);
-    int score = abs(kvis - PLOT_W);
+    *scoreOut = abs(kvis - PLOT_W);
+    return {fs, N, kvis};
+  };
 
-    // Prefer the closer match. On a tie, prefer the *smaller* N: any N
-    // that reaches score 0 got there because idealFsForResolution alone
-    // already cleared the margin floor - so every such N has already
-    // satisfied the margin requirement on its own merits, and a larger
-    // one just spends more FFT compute for headroom beyond what was
-    // actually asked for.
-    if (score < bestScore || (score == bestScore && N < best.N))
-    {
+  int bestScore = INT_MAX;
+  for (int i = 0; i < numChoices; i++)
+  {
+    int score;
+    candidate(i, &score);
+    if (score < bestScore)
       bestScore = score;
-      best = {fs, N, kvis};
-    }
   }
 
-  return best;
+  // Take the smallest N that fits nearly as well as the best one: any larger N
+  // just spends more FFT compute for headroom beyond what was actually asked for.
+  for (int i = 0; i < numChoices; i++)
+  {
+    int score;
+    FsNRecommendation c = candidate(i, &score);
+    if (score <= bestScore + FIT_TOLERANCE_BINS)
+      return c;
+  }
+
+  int unused;
+  return candidate(0, &unused); // not reached: the best-scoring N always qualifies
 }

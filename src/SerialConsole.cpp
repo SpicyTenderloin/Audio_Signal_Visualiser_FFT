@@ -25,8 +25,9 @@ void print_controls()
   Serial.println(F("=== Serial Commands (with examples) ==="));
   Serial.println(F("  help                # show this help"));
   Serial.println(F("  stats               # print current settings"));
-  Serial.println(F("  rawdump             # diagnostic: print raw I2S words from the ADC (play a steady tone first)"));
+  Serial.println(F("  rawdump             # diagnostic: print raw ADC words as pairs (play a steady tone first)"));
   Serial.println(F("  fs=2000..200000     # set sample rate (current mode only), e.g. fs=15000"));
+  Serial.println(F("  avg=1..100|auto     # ADC conversions averaged per sample (current mode); auto = as many as fit, e.g. avg=2"));
   Serial.println(F("  n=32|64|128|256|512|1024|2048|4096|8192   # e.g. n=512"));
   Serial.println(F("  agg=1..64           # e.g. agg=4 (coarser plot)"));
   Serial.println(F("  xscale=lin|log      # set X axis scale, e.g. xscale=lin"));
@@ -56,8 +57,8 @@ void print_stats()
                   (unsigned long)gFs, N, df_eff, bpp, (gXScale == XS_LIN ? "LIN" : "LOG"),
                   (gYScale == YS_DB ? "dB" : "LIN"), gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
     Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
-    Serial.printf("FPS=%.1f  Frame=%.2fms  FFT=%.2fms  Draw=%.2fms\r\n",
-                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0,
+    Serial.printf("FPS=%.1f  Compute=%.2fms (FFT=%.2fms)  Draw=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastComputeUs / 1000.0, (double)gLastFFTus / 1000.0,
                   (double)gLastDrawUs / 1000.0);
   }
   else // MODE_WAVEFORM
@@ -65,15 +66,25 @@ void print_stats()
     float spanMs = (float)PLOT_W / (float)gFs * 1000.0f;
     Serial.printf("Mode=Waveform  Fs=%lu  Span=%.2fms (%d samples)  Y range: +/-%.0f counts\r\n",
                   (unsigned long)gFs, (double)spanMs, PLOT_W, (double)gWaveYRange);
-    Serial.printf("FPS=%.1f  Frame=%.2fms  Draw=%.2fms\r\n",
-                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastDrawUs / 1000.0);
+    Serial.printf("FPS=%.1f  Compute=%.2fms  Draw=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastComputeUs / 1000.0, (double)gLastDrawUs / 1000.0);
   }
+  // Averaged over the last second, like FPS - so right after changing a
+  // setting these still describe the old one for up to a second.
+  Serial.printf("Capture: %.0f samples/s arriving, %lu set (ADC at %lu Hz, %lu averaged per sample, avg=",
+                (double)gMeasuredCaptureHz, (unsigned long)gFs,
+                (unsigned long)gAdcHwHz, (unsigned long)gAdcAvg);
+  if (gAvgReq == 0)
+    Serial.println(F("auto)"));
+  else
+    Serial.printf("%lu)\r\n", (unsigned long)gAvgReq);
   const char *calSrc = gCalSource == CAL_USER ? "user" : gCalSource == CAL_EFUSE ? "efuse" : "none";
   Serial.printf("ADC cal: source=%s  volts=raw*%.6f+%.6f\r\n", calSrc, (double)gCalGain, (double)gCalOffset);
   // RAM is what really limits the FFT size (every buffer scales with N), so
   // show the headroom: total free, and the biggest single block still free.
   Serial.printf("Heap: free=%u bytes  largest block=%u bytes\r\n",
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  Serial.printf("Chip: %u MHz  ESP-IDF %s\r\n", (unsigned)getCpuFrequencyMhz(), ESP.getSdkVersion());
 }
 
 // Suggests the fs=/n= combo whose visible bin count (0..fmaxHz) best fills
@@ -118,6 +129,17 @@ void apply_command(const char *s)
   else if (!strncmp(s, "fs=", 3))
   {
     setFs((uint32_t)atoi(s + 3));
+  }
+  else if (!strncmp(s, "avg=", 4))
+  {
+    // "auto" (or 0) means as many as the ADC's top rate allows.
+    const int v = strcasecmp(s + 4, "auto") ? atoi(s + 4) : 0;
+    setAvg(v > 0 ? (uint32_t)v : 0);
+    uint32_t lo, hi;
+    capture_avg_limits(gFs, &lo, &hi);
+    Serial.printf("  averaging: %lu..%lu possible at Fs=%lu (ADC at %lu..%lu Hz); avg=auto uses %lu\r\n",
+                  (unsigned long)lo, (unsigned long)hi, (unsigned long)gFs,
+                  (unsigned long)(gFs * lo), (unsigned long)(gFs * hi), (unsigned long)hi);
   }
   else if (!strncmp(s, "n=", 2))
   {

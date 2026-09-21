@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Adafruit_ILI9341.h>
-#include "driver/adc.h"
+#include "hal/adc_types.h"
 
 // -------------------- TFT Pins --------------------
 #define TFT_CS 5
@@ -12,7 +12,8 @@
 #define TFT_MISO 19
 
 // -------------------- MIC (ADC) -------------------
-#define MIC_CH ADC1_CHANNEL_0 // GPIO36
+#define MIC_UNIT ADC_UNIT_1
+#define MIC_CH ADC_CHANNEL_0 // GPIO36
 
 // -------------------- Buttons --------------------
 #define BTN_AGG_DOWN 12 // aggregation down
@@ -76,3 +77,28 @@ static const uint16_t DEBOUNCE_MS = 25;
 // -------------------- Sample rate range -------------
 static const uint32_t FS_MIN_HZ = 2000;
 static const uint32_t FS_MAX_HZ = 200000;
+// Top rate the ADC is run at (Hz). By default it runs at the highest multiple
+// of the requested sample rate that fits under this, and each group of
+// conversions is averaged down to the requested rate (see AudioCapture.cpp; the
+// serial avg= command overrides the averaging). The ESP32's ADC needs about 4us
+// per conversion, so 200kHz is close to what it can do; if it misbehaves at this
+// speed, lowering this is the first thing to try.
+static const uint32_t ADC_HW_MAX_HZ = 200000;
+
+// Horizontal zoom (highest plotted frequency) the spectrum view boots with.
+static const float DEFAULT_FMAX_HZ = 3000.0f;
+
+// The analog low-pass ahead of the ADC is being raised to a cutoff of about
+// 20kHz, and the sample-rate logic is designed for that. With the passband
+// reaching 20kHz, Fs has to stay comfortably above 2x the cutoff whatever range
+// is displayed, or content between fmax and the cutoff folds into the view; 2.4x
+// leaves a 4kHz transition band for the filter's roll-off to finish in. (Today's
+// filter is lower, about 3kHz, so this is currently more than enough.)
+static const float ANALOG_CUTOFF_HZ = 20000.0f;
+static const uint32_t MIN_ALIAS_SAFE_FS_HZ = (uint32_t)(2.4f * ANALOG_CUTOFF_HZ); // 48kHz
+
+// Sample rate and FFT length the firmware boots with (in both display modes):
+// the alias-safe floor, and the N that gives about 11.7Hz bins (Fs/N) with the
+// default 3kHz view filling most of the plot width.
+static const uint32_t DEFAULT_FS_HZ = MIN_ALIAS_SAFE_FS_HZ;
+static const uint16_t DEFAULT_N = 4096;

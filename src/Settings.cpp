@@ -43,10 +43,20 @@ void setFs(uint32_t fs)
   gHUDDirty = true;
 }
 
+void setAvg(uint32_t k)
+{
+  gAvgReq = k;
+  set_averaging(k);
+}
+
 // Highest signal frequency the waveform mode's zoom-out floor keeps
 // alias-safe. A constant of its own rather than the spectrum mode's Fmax, so
-// changing Fmax never shifts the waveform's zoom range; it matches the
-// spectrum's default Fmax, so out of the box the range is what it always was.
+// changing Fmax never shifts the waveform's zoom range. It equals the
+// spectrum's original default Fmax (2.5kHz) and reflects today's ~3kHz analog
+// filter. It does NOT yet reflect the planned 20kHz cutoff: honouring that here
+// would raise the floor to Config.h's MIN_ALIAS_SAFE_FS_HZ and cap the waveform
+// at about 5.7ms of time on screen, so the waveform's time base needs a
+// different approach (e.g. a peak-detect mode) before the filter is changed.
 static const float WAVE_ALIAS_SAFE_BANDWIDTH_HZ = 2500.0f;
 
 void scaleFs(bool up, float pct)
@@ -55,13 +65,12 @@ void scaleFs(bool up, float pct)
   float newFs = (float)gFs * factor;
 
   // Zooming out (lower Fs = more time shown) can't be allowed to eat the
-  // anti-aliasing margin the way it did before we caught that bug - floor
-  // it at the same "Nyquist >= FIDELITY_OVERSAMPLE_MARGIN x fmax" limit
-  // recommend_fs_n() uses, so the minimum zoom still keeps real headroom
-  // above WAVE_ALIAS_SAFE_BANDWIDTH_HZ instead of drifting into aliased
-  // territory. Zooming in
-  // (raising Fs) is never a safety concern, so it's left uncapped up to
-  // setFs()'s own FS_MAX_HZ ceiling.
+  // anti-aliasing margin - floor it at the same "Nyquist >=
+  // FIDELITY_OVERSAMPLE_MARGIN x fmax" limit recommend_fs_n() uses, so the
+  // minimum zoom still keeps real headroom above WAVE_ALIAS_SAFE_BANDWIDTH_HZ
+  // instead of drifting into aliased territory. Zooming in (raising Fs) is never
+  // a safety concern, so it's left uncapped up to setFs()'s own FS_MAX_HZ
+  // ceiling.
   if (!up)
   {
     float floor = fmaxf((float)FS_MIN_HZ, min_alias_safe_fs(WAVE_ALIAS_SAFE_BANDWIDTH_HZ));
@@ -141,14 +150,18 @@ void setHann(bool on)
 
 void toggleDisplayMode()
 {
-  // Each mode keeps its own Fs. gFs always holds the active mode's value
-  // (everything else reads it directly), so on a switch, swap it with the
-  // parked value of the mode we're switching to and reprogram the capture
-  // hardware for the restored rate.
+  // Each mode keeps its own Fs and ADC averaging. gFs/gAvgReq always hold the
+  // active mode's values (everything else reads them directly), so on a switch,
+  // swap them with the parked values of the mode we're switching to and
+  // reprogram the capture hardware for the restored settings.
   uint32_t fs = gInactiveFs;
   gInactiveFs = gFs;
   gFs = fs;
+  uint32_t avg = gInactiveAvgReq;
+  gInactiveAvgReq = gAvgReq;
+  gAvgReq = avg;
   set_sample_rate(gFs);
+  set_averaging(gAvgReq);
 
   gDisplayMode = (gDisplayMode == MODE_FFT) ? MODE_WAVEFORM : MODE_FFT;
   gAxesDirty = true; // the two modes' axes are entirely different

@@ -14,6 +14,10 @@ extern Adafruit_ILI9341 tft;
 // showing. toggleDisplayMode() swaps them on every switch.
 extern volatile uint32_t gFs;  // Hz, sample rate (serial-adjustable)
 extern uint32_t gInactiveFs;
+// The ADC averaging requested with the serial avg= command (0 = automatic), also
+// kept per display mode. The averaging actually in use is gAdcAvg.
+extern volatile uint32_t gAvgReq;
+extern uint32_t gInactiveAvgReq;
 
 extern const uint16_t N_CHOICES[9];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
@@ -86,7 +90,7 @@ extern volatile uint16_t gDC;
 enum CalSource
 {
   CAL_NONE = 0,  // naive ADC_VREF/ADC_FS ratio - no calibration data available
-  CAL_EFUSE = 1, // the chip's factory eFuse curve (esp_adc_cal)
+  CAL_EFUSE = 1, // the chip's factory eFuse curve
   CAL_USER = 2   // a saved interactive multi-point calibration (NVS)
 };
 extern volatile CalSource gCalSource;
@@ -97,8 +101,8 @@ extern volatile CalSource gCalSource;
 extern volatile float gCalGain;
 extern volatile float gCalOffset;
 
-// True while the interactive calibration screen is active - SpectrumTask.cpp
-// shows it instead of the normal FFT/waveform display, and Controls.cpp
+// True while the interactive calibration screen is active - the draw task
+// (SpectrumTask.cpp) shows it instead of the normal FFT/waveform display, and Controls.cpp
 // routes buttons to calibration actions instead of their usual ones.
 extern volatile bool gCalibrating;
 // Set whenever the calibration screen's point list changes (a new point
@@ -121,18 +125,28 @@ extern volatile float gCalTargetV; // currently selected target voltage (calibra
 extern bool gAxesDirty;
 extern bool gHUDDirty;
 
-// --- Fast draw (prefix sums over per-bin power) ---
-extern float *gPrefixPow; // size FFT_MAX/2; prefix sums for O(1) bin-range averages, heap-allocated (see alloc_fft_buffers())
+// Bumped by the draw task every time it redraws the axes. Frames computed
+// before a settings change carry the old value and are discarded, so a frame
+// never lands on axes that no longer match it (see SpectrumTask.cpp).
+extern volatile uint32_t gAxesGen;
 
 // -------------------- Performance stats -----------
-// Measured frame rate (frames/sec spectrum_task delivers), updated once/sec.
-// There is no target - the loop runs as fast as compute and drawing allow.
+// Measured frame rate (frames/sec the draw task delivers), updated once/sec.
+// There is no target - the pipeline runs as fast as compute and drawing allow.
 extern volatile float gMeasuredFPS;
-// Time spent in the FFT, in drawing the plot, and in the whole frame
-// (compute + draw), for the most recently processed frame (microseconds).
-// Excludes the idle wait for fresh samples, so this is what actually
-// competes for the frame budget.
+// Samples per second actually arriving from the ADC, averaged over the same
+// once-a-second window. It should match gFs; if it doesn't, the hardware is
+// not running at the rate the display assumes.
+extern volatile float gMeasuredCaptureHz;
+// What the ADC hardware is currently set to: its own sample rate, and how many
+// of its conversions are averaged into each sample at gFs (see AudioCapture.cpp).
+extern volatile uint32_t gAdcHwHz;
+extern volatile uint32_t gAdcAvg;
+// Time spent in the FFT, in the whole compute stage (windowing, FFT and power
+// spectrum), and in drawing the plot, for the most recent frame (microseconds).
+// The two stages run at the same time on different cores, so the frame rate is
+// set by the slower of compute and draw, not their sum. Excludes the idle wait
+// for fresh samples.
 extern volatile uint32_t gLastFFTus;
+extern volatile uint32_t gLastComputeUs;
 extern volatile uint32_t gLastDrawUs;
-extern volatile uint32_t gLastFrameUs;
-extern float gRefPow;                 // full-scale power for dBFS reference

@@ -21,21 +21,19 @@ void setup()
   Serial.begin(115200);
   delay(50);
   Serial.println();
-  Serial.println(F("FFT Spectrum (Line) - I2S/DMA ADC, Fmax=horizontal zoom, Fs/N auto-tuned for fidelity"));
+  Serial.println(F("FFT Spectrum (Line) - continuous ADC/DMA, Fmax=horizontal zoom, ADC oversampled and averaged down to Fs"));
 
-  // Start with Fmax acting as horizontal zoom, and Fs/N chosen for the best
-  // fidelity at that Fmax (recommend_fs_n(), DSPUtils.cpp): the fs=/n= combo
-  // whose visible bin count (0..Fmax) best fills the plot's pixel width -
-  // set before anything below reads gFs/gNidx, so it takes effect from boot.
+  // Start with Fmax acting as horizontal zoom, at the default Fs and N
+  // (DEFAULT_FS_HZ / DEFAULT_N, Config.h). Set before anything below reads
+  // gFs/gNidx, so it takes effect from boot.
   gFmaxFollowNyq = false;
-  gFmaxHz = 2500.0f;
-  FsNRecommendation rec = recommend_fs_n(gFmaxHz);
-  gFs = rec.fs;
+  gFmaxHz = DEFAULT_FMAX_HZ;
+  gFs = DEFAULT_FS_HZ;
   // The waveform mode starts from the same rate; from here on the two modes'
   // Fs are independent (see toggleDisplayMode()).
   gInactiveFs = gFs;
   for (uint8_t i = 0; i < sizeof(N_CHOICES) / sizeof(N_CHOICES[0]); i++)
-    if (N_CHOICES[i] == rec.N)
+    if (N_CHOICES[i] == DEFAULT_N)
     {
       gNidx = i;
       break;
@@ -92,7 +90,7 @@ void setup()
   // Window for the default FFT length
   make_window_for_N(N_CHOICES[gNidx]);
 
-  // ADC + I2S/DMA capture (mic sampling into the circular buffer)
+  // ADC continuous/DMA capture (mic sampling into the circular buffer)
   init_audio_capture();
 
   // Resolves which ADC calibration tier is active for this boot (saved
@@ -101,9 +99,11 @@ void setup()
   // already configured.
   calibration_init();
 
-  // FFT/draw runs on core 0 so button/serial polling on core 1 (loop())
-  // never waits on FFT compute or SPI draw time. It performs the first
-  // draw_axes() itself, since gAxesDirty starts true.
+  // The FFT runs on core 0 and drawing on core 1, as a pipeline (see
+  // SpectrumTask.cpp). The loop task that polls buttons and serial shares core
+  // 1 with drawing, so start_spectrum_task() also raises its priority: it always
+  // preempts a draw. The draw task performs the first draw_axes() itself, since
+  // gAxesDirty starts true.
   start_spectrum_task();
 }
 

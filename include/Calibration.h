@@ -5,7 +5,7 @@
 // -------------------- ADC calibration --------------------------------
 // Three tiers, in priority order: a user-run multi-point calibration
 // (saved to NVS flash, survives power cycles) beats the chip's factory
-// eFuse curve (esp_adc_cal - free accuracy, no extra hardware, but only
+// eFuse curve (free accuracy, no extra hardware, but only
 // corrects the ADC itself, not the external mic circuit) beats the naive
 // ADC_VREF/ADC_FS ratio Config.h's constants imply. All three ultimately
 // resolve to a single (gain, offset) pair at boot - see calibration_init()

@@ -11,8 +11,11 @@ void setFmax(float hz);
 void scaleFmax(bool up, float pct = 5.0f);
 
 // -------------------- Sample rate setter -----------
-// Sets the ADC sample rate, reprograms the capture timer, and re-clamps Fmax.
+// Requests a new ADC sample rate (see set_sample_rate()) and re-clamps Fmax.
 void setFs(uint32_t fs);
+// Sets how many ADC conversions are averaged into each sample in the current
+// mode (0 = automatic: as many as the ADC's top rate allows).
+void setAvg(uint32_t k);
 // Zooms Fs in/out by `pct` percent - the waveform mode's time-axis zoom.
 // The plot always shows PLOT_W raw samples, so a higher Fs means each of
 // those samples spans less real time: "zoom in" (up=true) means less time
@@ -26,7 +29,7 @@ void setYMax(float dB);
 void setYMin(float dB);
 
 // -------------------- Other setters -----------------
-// Selects an FFT length by index into N_CHOICES and rebuilds the window/ISR state.
+// Selects an FFT length by index into N_CHOICES and rebuilds the window.
 void setNidx(uint8_t i);
 // Sets the bin-aggregation factor (coarser/finer plot), clamped to [1, 64].
 void setAgg(uint8_t v);

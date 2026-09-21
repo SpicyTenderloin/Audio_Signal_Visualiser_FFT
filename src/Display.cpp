@@ -90,9 +90,9 @@ static inline int y_from_amplitude(int16_t sample)
 }
 
 // Last frame's per-column plot row, so draw_line_spectrum()/draw_waveform()
-// can erase only the pixels they actually touched instead of clearing the
-// whole plot rect every frame. Invalidated whenever the plot area gets
-// wiped some other way (a full draw_axes() redraw).
+// only rewrite the columns that changed (see update_polyline()) instead of
+// clearing the whole plot rect every frame. Invalidated whenever the plot area
+// gets wiped some other way (a full draw_axes() redraw).
 static int16_t s_prevLineY[PLOT_W];
 static bool s_prevLineValid = false;
 
@@ -100,7 +100,7 @@ static bool s_prevLineValid = false;
 // 0 = PLOT_Y) and a per-column part (index 0 = PLOT_X), rebuilt by
 // draw_axes() whenever it redraws. Horizontal gridlines are drawn after
 // vertical ones there, so at an intersection the row color wins - see
-// bg_at() below. Erasing the previous trace has to restore this, not flat
+// bg_at() below. Updating the trace has to restore this, not flat
 // COL_BG, or it punches gridline pixels out wherever the old trace crossed
 // them.
 static uint16_t s_rowBG[PLOT_H];
@@ -193,7 +193,7 @@ static void update_polyline(const int16_t *oldY, const int16_t *newY)
 
 // -------------------- X/Y tick drawing, per mode ----------------
 // Both populate s_colVGridColor/s_rowBG as they go, same as each other, so
-// the erase machinery above stays generic across modes.
+// update_polyline() above stays generic across modes.
 
 static void draw_xticks_fft()
 {
@@ -697,7 +697,7 @@ void draw_hud_fps(bool force)
   tft.print(buf);
 }
 
-void draw_line_spectrum(uint16_t N)
+void draw_line_spectrum(uint16_t N, const float *prefix, float refPow)
 {
   const float df = (float)gFs / (float)N;
 
@@ -746,19 +746,19 @@ void draw_line_spectrum(uint16_t N)
     if (k1 < k0)
       k1 = k0;
 
-    float sumP = gPrefixPow[k1] - gPrefixPow[k0 - 1];
+    float sumP = prefix[k1] - prefix[k0 - 1];
     float meanP = sumP / (float)(k1 - k0 + 1);
 
     int y;
     if (gYScale == YS_DB)
     {
-      // meanP/gRefPow is a power ratio; 10*log10(power ratio) == 20*log10(amplitude ratio) == dBFS.
-      float dB = (meanP > 0.0f && gRefPow > 0.0f) ? 10.0f * log10f(meanP / gRefPow) : -120.0f;
+      // meanP/refPow is a power ratio; 10*log10(power ratio) == 20*log10(amplitude ratio) == dBFS.
+      float dB = (meanP > 0.0f && refPow > 0.0f) ? 10.0f * log10f(meanP / refPow) : -120.0f;
       y = y_from_db(dB);
     }
     else
     {
-      float frac = (meanP > 0.0f && gRefPow > 0.0f) ? sqrtf(meanP / gRefPow) : 0.0f;
+      float frac = (meanP > 0.0f && refPow > 0.0f) ? sqrtf(meanP / refPow) : 0.0f;
       y = y_from_linear(frac);
     }
     yArr[i] = (int16_t)y;

@@ -20,8 +20,11 @@ void draw_hud();
 void draw_hud_fps(bool force = false);
 
 // -------------------- Line rendering (O(width)) ---
-// Draws one frame of the spectrum line using the precomputed power/prefix-sum buffers.
-void draw_line_spectrum(uint16_t N);
+// Draws one frame of the spectrum line from a computed frame: prefix holds
+// running sums of the per-bin power (see realfft_power_prefix()) and refPow is
+// the full-scale power that is 0dBFS. Both belong to the frame being drawn,
+// since the next frame is already being computed into another buffer.
+void draw_line_spectrum(uint16_t N, const float *prefix, float refPow);
 // Draws one frame of the raw waveform: samples[0..PLOT_W) are one centered
 // ADC sample per pixel column.
 void draw_waveform(const int16_t *samples);

@@ -3,16 +3,18 @@
 
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
-// gFs/gNidx/gFmaxHz's real starting values are set in setup() via
-// recommend_fs_n() (best fidelity for the default Fmax) before anything
-// reads them - these are just fallbacks in case that were ever skipped.
-volatile uint32_t gFs = 40000;
-uint32_t gInactiveFs = 40000; // the waveform mode's, until first switched to
+// gFs/gNidx/gFmaxHz's real starting values are set in setup() (from
+// DEFAULT_FS_HZ, DEFAULT_N and DEFAULT_FMAX_HZ) before anything reads them -
+// these are just fallbacks in case that were ever skipped.
+volatile uint32_t gFs = DEFAULT_FS_HZ;
+uint32_t gInactiveFs = DEFAULT_FS_HZ; // the waveform mode's, until first switched to
+volatile uint32_t gAvgReq = 0;         // 0 = automatic
+uint32_t gInactiveAvgReq = 0;
 
 const uint16_t N_CHOICES[9] = {32, 64, 128, 256, 512, 1024, 2048, 4096, 8192};
-volatile uint8_t gNidx = 5; // N=1024
+volatile uint8_t gNidx = 7; // N=4096 (DEFAULT_N)
 volatile uint8_t gAgg = 1;
-volatile float gFmaxHz = 2500.0f;
+volatile float gFmaxHz = DEFAULT_FMAX_HZ;
 volatile bool gFmaxFollowNyq = false;
 
 volatile float gYMax_dB = 0.0f; // default top
@@ -46,13 +48,15 @@ volatile float gCalTargetV = 0.0f;
 bool gAxesDirty = true;
 bool gHUDDirty = true;
 
-float *gPrefixPow = nullptr;
+volatile uint32_t gAxesGen = 0;
 
 volatile float gMeasuredFPS = 0.0f;
+volatile float gMeasuredCaptureHz = 0.0f;
+volatile uint32_t gAdcHwHz = 0;
+volatile uint32_t gAdcAvg = 1;
 volatile uint32_t gLastFFTus = 0;
+volatile uint32_t gLastComputeUs = 0;
 volatile uint32_t gLastDrawUs = 0;
-volatile uint32_t gLastFrameUs = 0;
-float gRefPow = 1.0f;
 
 uint32_t fft_mode_fs()
 {
@@ -66,9 +70,6 @@ void alloc_fft_buffers()
 
   window_buf = new (std::nothrow) float[FFT_MAX];
   check_alloc(window_buf, "window_buf", FFT_MAX * sizeof(float));
-
-  gPrefixPow = new (std::nothrow) float[FFT_MAX / 2];
-  check_alloc(gPrefixPow, "gPrefixPow", (FFT_MAX / 2) * sizeof(float));
 }
 
 void check_alloc(const void *p, const char *what, size_t bytes)

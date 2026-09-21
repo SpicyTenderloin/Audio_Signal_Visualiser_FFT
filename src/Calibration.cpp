@@ -4,7 +4,8 @@
 #include "DSPUtils.h"
 #include "AudioCapture.h"
 #include <Preferences.h>
-#include "esp_adc_cal.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 
 const float CAL_PRESET_VOLTS[CAL_PRESET_COUNT] = {0.00f, 0.825f, 1.65f, 2.475f, 3.30f};
 
@@ -13,10 +14,10 @@ static Preferences prefs;
 
 // ---------------- raw <-> volts, tier-agnostic at call time -------------
 // Every tier reduces to a single (gain, offset) pair in calibration_init()
-// (esp_adc_cal's own curve is itself just gain+offset on the plain ESP32
-// this project targets, so probing it at two raw codes reconstructs it
+// (the driver's line-fitting curve is itself just gain+offset on the plain
+// ESP32 this project targets, so probing it at two raw codes reconstructs it
 // exactly - see calibration_init() below), so these never need to branch
-// on gCalSource or touch esp_adc_cal per call.
+// on gCalSource or touch the ADC calibration driver per call.
 float adc_counts_to_volts(float rawCounts)
 {
   return rawCounts * gCalGain + gCalOffset;
@@ -74,21 +75,39 @@ void calibration_init()
     return;
   }
 
-  esp_adc_cal_characteristics_t chars;
-  esp_adc_cal_value_t calType = esp_adc_cal_characterize(
-      ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_12, 1100, &chars);
-  if (calType == ESP_ADC_CAL_VAL_EFUSE_VREF || calType == ESP_ADC_CAL_VAL_EFUSE_TP)
+  // The chip's factory curve, if its eFuses hold calibration data (a
+  // two-point or a Vref calibration).
+  adc_cali_line_fitting_efuse_val_t efuseCal = ADC_CALI_LINE_FITTING_EFUSE_VAL_DEFAULT_VREF;
+  const bool haveEfuse = adc_cali_scheme_line_fitting_check_efuse(&efuseCal) == ESP_OK &&
+                         (efuseCal == ADC_CALI_LINE_FITTING_EFUSE_VAL_EFUSE_VREF ||
+                          efuseCal == ADC_CALI_LINE_FITTING_EFUSE_VAL_EFUSE_TP);
+  adc_cali_handle_t caliHandle = nullptr;
+  if (haveEfuse)
   {
-    // Reduce esp_adc_cal's curve to a plain (gain, offset) pair by probing
-    // it at the two extremes, rather than depending on its internal
-    // coeff_a/coeff_b fields (not stable public API across IDF versions).
-    float v0 = (float)esp_adc_cal_raw_to_voltage(0, &chars) / 1000.0f;
-    float v4095 = (float)esp_adc_cal_raw_to_voltage(4095, &chars) / 1000.0f;
+    adc_cali_line_fitting_config_t caliCfg = {};
+    caliCfg.unit_id = MIC_UNIT;
+    caliCfg.atten = ADC_ATTEN_DB_12;
+    caliCfg.bitwidth = ADC_BITWIDTH_12;
+    caliCfg.default_vref = 1100;
+    if (adc_cali_create_scheme_line_fitting(&caliCfg, &caliHandle) != ESP_OK)
+      caliHandle = nullptr;
+  }
+  if (caliHandle)
+  {
+    // Reduce the driver's curve to a plain (gain, offset) pair by probing it
+    // at the two extremes, rather than depending on its internal
+    // coefficients (not stable public API across IDF versions).
+    int mv0 = 0, mv4095 = 0;
+    adc_cali_raw_to_voltage(caliHandle, 0, &mv0);
+    adc_cali_raw_to_voltage(caliHandle, 4095, &mv4095);
+    adc_cali_delete_scheme_line_fitting(caliHandle);
+    const float v0 = (float)mv0 / 1000.0f;
+    const float v4095 = (float)mv4095 / 1000.0f;
     gCalGain = (v4095 - v0) / 4095.0f;
     gCalOffset = v0;
     gCalSource = CAL_EFUSE;
     Serial.printf("ADC calibration: using factory eFuse curve (%s).\r\n",
-                  calType == ESP_ADC_CAL_VAL_EFUSE_TP ? "two-point" : "vref");
+                  efuseCal == ADC_CALI_LINE_FITTING_EFUSE_VAL_EFUSE_TP ? "two-point" : "vref");
     return;
   }
 
@@ -145,7 +164,7 @@ void calibration_capture_point()
   }
 
   // Average recent raw samples straight out of the live capture ring
-  // buffer instead of a fresh adc1_get_raw() read - the I2S driver has
+  // buffer instead of a fresh one-shot read - the continuous ADC driver has
   // claimed ADC1 for DMA since init_audio_capture(), so direct reads
   // aren't safe here (see quick_dc_estimate()'s comment in AudioCapture.cpp).
   // capture_sample_at() returns DC-centered samples, so add gDC back to
@@ -159,7 +178,7 @@ void calibration_capture_point()
 
   gCalPoints[gCalPointCount].raw = avgRaw;
   gCalPoints[gCalPointCount].volts = gCalTargetV;
-  gCalPointCount++;
+  gCalPointCount = gCalPointCount + 1; // not ++: incrementing a volatile is deprecated in C++20
   gCalScreenDirty = true;
 
   Serial.printf("Calibration point %d captured: raw=%.1f at %.3fV\r\n",
@@ -170,7 +189,7 @@ void calibration_undo_point()
 {
   if (gCalPointCount == 0)
     return;
-  gCalPointCount--;
+  gCalPointCount = gCalPointCount - 1;
   gCalScreenDirty = true;
 }
 
