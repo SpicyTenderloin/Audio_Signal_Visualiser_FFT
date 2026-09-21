@@ -184,7 +184,7 @@ void apply_command(const char *s)
   }
   else if (!strcmp(s, "cal clear"))
   {
-    Serial.println(F("Really clear the saved calibration? (y/n)"));
+    Serial.println(F("Are you sure you want to clear the saved calibration? (y/n)"));
     s_pendingCalClearConfirm = true;
   }
   else
