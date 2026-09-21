@@ -53,7 +53,7 @@ static const int BASE_Y = PLOT_Y + PLOT_H - 1;
 #define COL_TEXT ILI9341_WHITE
 #define COL_GRID 0x2104
 #define COL_GRID_MINOR 0x1082
-#define COL_TITLE ILI9341_YELLOW
+#define COL_TITLE ILI9341_WHITE
 #define COL_LINE ILI9341_CYAN
 
 // -------------------- Buffers ---------------------
