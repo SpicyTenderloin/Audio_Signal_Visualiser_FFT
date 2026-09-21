@@ -69,6 +69,45 @@ void check_alloc(const void *p, const char *what, size_t bytes);
 // -------------------- ADC/DC ----------------------
 extern volatile uint16_t gDC;
 
+// -------------------- ADC calibration ----------------------
+// Which tier calibration_init() (Calibration.cpp) resolved gCalGain/
+// gCalOffset from - for boot-log/diagnostic purposes only; every other
+// caller just uses adc_counts_to_volts()/adc_volts_to_counts() and doesn't
+// need to know which tier is behind them.
+enum CalSource
+{
+  CAL_NONE = 0,  // naive ADC_VREF/ADC_FS ratio - no calibration data available
+  CAL_EFUSE = 1, // the chip's factory eFuse curve (esp_adc_cal)
+  CAL_USER = 2   // a saved interactive multi-point calibration (NVS)
+};
+extern volatile CalSource gCalSource;
+// Active calibration coefficients: volts = rawCounts * gCalGain + gCalOffset.
+// Resolved once at boot (or immediately after finishing/clearing a user
+// calibration) regardless of which tier they came from, so hot paths (axis
+// tick generation) never need to branch on gCalSource themselves.
+extern volatile float gCalGain;
+extern volatile float gCalOffset;
+
+// True while the interactive calibration screen is active - SpectrumTask.cpp
+// shows it instead of the normal FFT/waveform display, and Controls.cpp
+// routes buttons to calibration actions instead of their usual ones.
+extern volatile bool gCalibrating;
+// Set whenever the calibration screen's point list changes (a new point
+// captured, one undone) or the screen is freshly entered - tells
+// draw_calibration_screen() to do a full redraw instead of just updating
+// the live target-voltage/raw-ADC readout.
+extern bool gCalScreenDirty;
+
+#define CAL_MAX_POINTS 12
+struct CalPoint
+{
+  float raw;   // averaged raw ADC code (0..4095) captured at this point
+  float volts; // the true voltage the user applied when it was captured
+};
+extern CalPoint gCalPoints[CAL_MAX_POINTS];
+extern volatile uint8_t gCalPointCount;
+extern volatile float gCalTargetV; // currently selected target voltage (calibration mode)
+
 // -------------------- Dirty flags -----------------
 extern bool gAxesDirty;
 extern bool gHUDDirty;

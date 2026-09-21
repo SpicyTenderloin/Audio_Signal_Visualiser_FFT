@@ -25,3 +25,10 @@ void draw_line_spectrum(uint16_t N);
 // Draws one frame of the raw waveform: samples[0..PLOT_W) are one centered
 // ADC sample per pixel column.
 void draw_waveform(const int16_t *samples);
+
+// -------------------- Interactive calibration screen ---------------
+// Shown instead of the normal FFT/waveform display while gCalibrating is
+// true (see Controls.cpp/SpectrumTask.cpp/Calibration.cpp). full=true does
+// a complete redraw (title, points list, instructions); full=false just
+// updates the live target-voltage/raw-ADC readout, flicker-free.
+void draw_calibration_screen(bool full);

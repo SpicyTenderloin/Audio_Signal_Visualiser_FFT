@@ -16,6 +16,7 @@
 #include "Controls.h"
 #include "SerialConsole.h"
 #include "SpectrumTask.h"
+#include "Calibration.h"
 
 void setup()
 {
@@ -92,6 +93,12 @@ void setup()
 
   // ADC + I2S/DMA capture (mic sampling into the circular buffer)
   init_audio_capture();
+
+  // Resolves which ADC calibration tier is active for this boot (saved
+  // user calibration > chip's eFuse curve > naive ADC_VREF/ADC_FS ratio) -
+  // after init_audio_capture() since it needs ADC1's channel/attenuation
+  // already configured.
+  calibration_init();
 
   // FFT/draw runs on core 0 so button/serial polling on core 1 (loop())
   // never waits on FFT compute or SPI draw time. It performs the first

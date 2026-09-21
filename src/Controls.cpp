@@ -2,10 +2,19 @@
 #include "Config.h"
 #include "Globals.h"
 #include "Settings.h"
+#include "Calibration.h"
 
 static Btn bAggDn{BTN_AGG_DOWN, true, 0}, bAggUp{BTN_AGG_UP, true, 0},
     bNDn{BTN_N_DOWN, true, 0}, bNUp{BTN_N_UP, true, 0},
     bPause{BTN_PAUSE, true, 0}, bZoomUp{BTN_ZOOM_UP, true, 0}, bZoomDn{BTN_ZOOM_DN, true, 0};
+
+// PAUSE's dual behavior in calibration mode (short press = capture point,
+// held = finish) needs how-long-has-it-been-down tracking, which
+// pressedEdge()'s debounce alone doesn't give - it only reports the press
+// edge. Independent of Btn/pressedEdge() since this only matters here.
+static uint32_t s_pauseDownAt = 0;
+static bool s_pauseLongFired = false;
+static const uint32_t CAL_LONG_PRESS_MS = 1200;
 
 bool pressedEdge(Btn &b)
 {
@@ -44,6 +53,45 @@ void pollButtons()
   bool nUp = pressedEdge(bNUp);
   bool zoomDn = pressedEdge(bZoomDn);
   bool zoomUp = pressedEdge(bZoomUp);
+
+  if (gCalibrating)
+  {
+    // ZOOM cycles the recommended presets; AGG fine-adjusts +/-0.01V for a
+    // custom target not on that list; N- undoes the last captured point.
+    if (zoomUp)
+      calibration_cycle_preset(true);
+    if (zoomDn)
+      calibration_cycle_preset(false);
+    if (aggUp)
+      calibration_nudge_target(true);
+    if (aggDn)
+      calibration_nudge_target(false);
+    if (nDn)
+      calibration_undo_point();
+
+    // PAUSE: short press captures a point at the current target voltage;
+    // held past CAL_LONG_PRESS_MS finishes calibration - fires once on
+    // crossing the threshold, not every poll while still held down.
+    bool pauseHeld = (digitalRead(BTN_PAUSE) == LOW);
+    if (pause)
+    {
+      s_pauseDownAt = millis();
+      s_pauseLongFired = false;
+    }
+    if (pauseHeld && s_pauseDownAt != 0 && !s_pauseLongFired &&
+        (millis() - s_pauseDownAt) >= CAL_LONG_PRESS_MS)
+    {
+      s_pauseLongFired = true;
+      calibration_finish();
+    }
+    if (!pauseHeld && s_pauseDownAt != 0)
+    {
+      if (!s_pauseLongFired)
+        calibration_capture_point();
+      s_pauseDownAt = 0;
+    }
+    return;
+  }
 
   // Mode switch - works the same regardless of which mode is active.
   if (pause)

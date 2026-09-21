@@ -31,6 +31,18 @@ static void spectrum_task(void *pvParameters)
 
   for (;;)
   {
+    if (gCalibrating)
+    {
+      // Replaces the normal FFT/waveform display entirely while active -
+      // capture_drain_task keeps filling the buffer in the background
+      // (calibration_capture_point() reads straight out of it), it just
+      // isn't run through the FFT/plot pipeline below.
+      draw_calibration_screen(gCalScreenDirty);
+      gCalScreenDirty = false;
+      vTaskDelay(pdMS_TO_TICKS(100)); // ~10Hz is plenty for a live readout
+      continue;
+    }
+
     if (gAxesDirty)
       draw_axes(N_CHOICES[gNidx]);
 

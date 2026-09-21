@@ -33,6 +33,16 @@ float *window_buf = nullptr;
 
 volatile uint16_t gDC = 2048;
 
+volatile CalSource gCalSource = CAL_NONE;
+volatile float gCalGain = ADC_VREF / ADC_FS;
+volatile float gCalOffset = 0.0f;
+
+volatile bool gCalibrating = false;
+bool gCalScreenDirty = true;
+CalPoint gCalPoints[CAL_MAX_POINTS];
+volatile uint8_t gCalPointCount = 0;
+volatile float gCalTargetV = 0.0f;
+
 bool gAxesDirty = true;
 bool gHUDDirty = true;
 

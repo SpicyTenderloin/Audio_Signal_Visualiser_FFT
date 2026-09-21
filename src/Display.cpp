@@ -1,6 +1,8 @@
 #include "Display.h"
 #include "Globals.h"
 #include "DSPUtils.h"
+#include "Calibration.h"
+#include "AudioCapture.h"
 #include "Aurora7pt7b.h"
 #include <math.h>
 #include <limits.h>
@@ -445,31 +447,47 @@ static void draw_xticks_waveform()
   }
 }
 
-// Y ticks for the waveform view: centered amplitude, displayed in volts
-// (±gWaveYRange raw ADC counts, converted via ADC_VREF/ADC_FS) since raw
-// codes aren't a meaningful unit to read off a scope-style display. The
-// "nice" step is computed in volts directly, then converted back to counts
-// per tick only to find its pixel row - so gridlines land on round volt
-// values (0.5V, 1.0V, ...) rather than round-but-arbitrary code counts.
-// Steps by integer multiples of `minor` (rather than the FFT Y axis's
-// fmodf-based major/minor test) so it stays exact on both sides of zero -
-// fmodf's sign behavior on negative values would otherwise misjudge which
-// ticks are major below the centerline.
+// Y ticks for the waveform view: centered amplitude, displayed in volts via
+// adc_counts_to_volts()/adc_volts_to_counts() (Calibration.cpp) - raw codes
+// aren't a meaningful unit to read off a scope-style display, and those two
+// functions apply whichever calibration tier is active (user/eFuse/naive)
+// uniformly. Because a real calibration's offset generally isn't zero, the
+// resulting volts span [bot, top] isn't necessarily symmetric around 0V
+// (or even centered on the mic's actual bias point) the way the raw
+// ±gWaveYRange counts range is - so, unlike a fixed "nice step around
+// zero", this finds the nice step and the *absolute* integer-multiple-of-
+// that-step ticks landing anywhere within [bot, top], the same general
+// approach draw_yticks_fft()'s dB branch already uses for an arbitrary
+// (not necessarily zero-centered) range. Still uses integer step indices
+// rather than the FFT Y axis's fmodf-based major/minor test, for the same
+// reason as before: fmodf's sign behavior on negative values would
+// misjudge which ticks are major below the centerline.
 static void draw_yticks_waveform()
 {
-  float rangeV = gWaveYRange * ADC_VREF / ADC_FS;
-  float rough = rangeV / 3.0f;
+  float top = adc_counts_to_volts((float)gDC + gWaveYRange);
+  float bot = adc_counts_to_volts((float)gDC - gWaveYRange);
+  if (bot > top)
+  {
+    float t = top;
+    top = bot;
+    bot = t;
+  }
+  float span = fmaxf(top - bot, 1e-6f);
+  float rough = span / 6.0f;
   float major = nice_step_125(rough);
   float minor = major * 0.5f; // always exactly major/2, so "every 2nd step" below is exact
 
-  int maxStep = (int)floorf(rangeV / minor);
+  int stepLo = (int)ceilf(bot / minor);
+  int stepHi = (int)floorf(top / minor);
 
-  for (int step = maxStep; step >= -maxStep; --step)
+  for (int step = stepHi; step >= stepLo; --step)
   {
-    float v = step * minor;                 // volts
-    float counts = v * ADC_FS / ADC_VREF;    // back to raw counts, for the pixel row
+    float v = step * minor; // volts
+    float counts = adc_volts_to_counts(v) - (float)gDC; // back to centered counts, for the pixel row
     bool major_ = (step % 2 == 0);
     int y = y_from_amplitude((int16_t)roundf(counts));
+    if (y < PLOT_Y || y > BASE_Y)
+      continue;
 
     if (major_)
       tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
@@ -780,4 +798,72 @@ void draw_waveform(const int16_t *samples)
 
   if (gHUDDirty)
     draw_hud();
+}
+
+// -------------------- Interactive calibration screen ---------------
+// A utility/bring-up screen, not the main visualizer - simple full-clear
+// redraws for the static parts (only needed when the point list changes)
+// are fine here, but the live target-voltage/raw-ADC readout updates every
+// ~100ms (see the gCalibrating branch in SpectrumTask.cpp) and uses
+// fixed-width overwrites instead, the same flicker-free trick
+// draw_hud_fps() uses elsewhere in this file.
+static void draw_cal_live_values()
+{
+  char buf[32];
+  tft.setTextColor(COL_TEXT, COL_BG);
+
+  tft.setTextSize(2);
+  snprintf(buf, sizeof(buf), "Target: %6.3fV", (double)gCalTargetV);
+  tft.setCursor(20, 50);
+  tft.print(buf);
+  tft.setTextSize(1);
+
+  uint32_t pos = capture_write_pos();
+  int32_t raw = (int32_t)capture_sample_at(pos - 1) + (int32_t)gDC;
+  snprintf(buf, sizeof(buf), "Live raw ADC: %4ld / %d  ", (long)raw, (int)ADC_FS);
+  tft.setCursor(20, 90);
+  tft.print(buf);
+}
+
+void draw_calibration_screen(bool full)
+{
+  if (full)
+  {
+    tft.fillScreen(COL_BG);
+
+    const char *title = "ADC Calibration";
+    int16_t bx, by;
+    uint16_t tw, th;
+    tft.setTextSize(2);
+    tft.getTextBounds(title, 0, 0, &bx, &by, &tw, &th);
+    tft.setCursor((SCREEN_W - (int)tw) / 2, 6);
+    tft.setTextColor(COL_TITLE, COL_BG);
+    tft.print(title);
+    tft.setTextSize(1);
+
+    tft.setTextColor(COL_TEXT, COL_BG);
+    char buf[40];
+    snprintf(buf, sizeof(buf), "Points captured: %d/%d", (int)gCalPointCount, CAL_MAX_POINTS);
+    tft.setCursor(20, 108);
+    tft.print(buf);
+
+    int y = 122;
+    int shown = gCalPointCount < 6 ? (int)gCalPointCount : 6;
+    for (int i = (int)gCalPointCount - shown; i < (int)gCalPointCount; i++)
+    {
+      snprintf(buf, sizeof(buf), "%2d: raw=%6.0f -> %6.3fV", i + 1, (double)gCalPoints[i].raw, (double)gCalPoints[i].volts);
+      tft.setCursor(20, y);
+      tft.print(buf);
+      y += 12;
+    }
+
+    tft.setCursor(4, SCREEN_H - 44);
+    tft.print("ZOOM: preset volt   AGG: +/-0.01V");
+    tft.setCursor(4, SCREEN_H - 32);
+    tft.print("PAUSE: capture point");
+    tft.setCursor(4, SCREEN_H - 20);
+    tft.print("HOLD PAUSE: finish   N-: undo point");
+  }
+
+  draw_cal_live_values();
 }

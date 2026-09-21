@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "DSPUtils.h"
 #include "Settings.h"
+#include "Calibration.h"
 
 static char cmdBuf[96];
 static uint8_t cmdLen = 0;
@@ -32,6 +33,9 @@ void print_controls()
   Serial.println(F("  hann=0|1            # Hann window off/on, e.g. hann=1"));
   Serial.println(F("  mode=fft|wave       # switch display mode, e.g. mode=wave"));
   Serial.println(F("  pause               # toggle pause"));
+  Serial.println(F("  cal                 # enter interactive ADC calibration (see on-screen/button prompts)"));
+  Serial.println(F("  cal cancel          # exit calibration mode without saving"));
+  Serial.println(F("  cal clear           # erase the saved user calibration (revert to eFuse/naive)"));
   Serial.println();
 }
 
@@ -59,6 +63,8 @@ void print_stats()
     Serial.printf("FPS(actual)=%.1f  Frame=%.2fms\r\n",
                   (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0);
   }
+  const char *calSrc = gCalSource == CAL_USER ? "user" : gCalSource == CAL_EFUSE ? "efuse" : "none";
+  Serial.printf("ADC cal: source=%s  volts=raw*%.6f+%.6f\r\n", calSrc, (double)gCalGain, (double)gCalOffset);
 }
 
 // Suggests the fs=/n= combo whose visible bin count (0..fmaxHz) best fills
@@ -152,6 +158,18 @@ void apply_command(const char *s)
   else if (!strcmp(s, "pause"))
   {
     gPaused = !gPaused;
+  }
+  else if (!strcmp(s, "cal"))
+  {
+    calibration_enter();
+  }
+  else if (!strcmp(s, "cal cancel"))
+  {
+    calibration_cancel();
+  }
+  else if (!strcmp(s, "cal clear"))
+  {
+    calibration_clear_saved();
   }
   else
   {
