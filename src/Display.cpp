@@ -298,9 +298,24 @@ static void draw_xticks_fft()
   }
 }
 
-// Y ticks. The topmost major tick's label carries the unit suffix (dB or
-// %, for full-scale amplitude), so the axis is self-labeling without
-// needing separate room for a unit caption.
+// Draws a Y-tick label right-aligned against its tick stub (ending at
+// PLOT_X - tickLen - 2), rather than left-anchored at a fixed offset. A
+// fixed-left anchor only works as long as every label is short enough to
+// fit before it starts overlapping the plot - true for FFT's 2-4 char dB/%
+// labels, but not for the waveform axis's wider values. Anchoring to the
+// tick instead means any label width stays clear of the plot, using
+// however much of the margin it actually needs.
+static void draw_ytick_label(const char *lab, int y, int tickLen)
+{
+  int w = (int)strlen(lab) * 6; // default GFX font: fixed 6px/char advance at size 1
+  int x = PLOT_X - tickLen - 2 - w;
+  if (x < 0)
+    x = 0;
+  tft.setCursor(x, y - 3);
+  tft.setTextColor(COL_TEXT, COL_BG);
+  tft.print(lab);
+}
+
 static void draw_yticks_fft()
 {
   if (gYScale == YS_DB)
@@ -322,7 +337,6 @@ static void draw_yticks_fft()
 
     int dTop = (int)ceilf(top);
     int dBot = (int)floorf(bot);
-    bool firstMajor = true;
 
     for (int d = dTop; d >= dBot; d -= 2)
     {
@@ -341,11 +355,8 @@ static void draw_yticks_fft()
       if (major)
       {
         char lab[12];
-        snprintf(lab, sizeof(lab), firstMajor ? "%ddB" : "%d", d);
-        firstMajor = false;
-        tft.setCursor(PLOT_X - 28, y - 3);
-        tft.setTextColor(COL_TEXT, COL_BG);
-        tft.print(lab);
+        snprintf(lab, sizeof(lab), "%d", d);
+        draw_ytick_label(lab, y, tickLen);
       }
     }
   }
@@ -353,7 +364,6 @@ static void draw_yticks_fft()
   {
     const int majorStepPct = 20;
     const int minorStepPct = 10;
-    bool firstMajor = true;
 
     for (int pct = 100; pct >= 0; pct -= minorStepPct)
     {
@@ -372,11 +382,8 @@ static void draw_yticks_fft()
       if (major)
       {
         char lab[12];
-        snprintf(lab, sizeof(lab), firstMajor ? "%d%%" : "%d", pct);
-        firstMajor = false;
-        tft.setCursor(PLOT_X - 28, y - 3);
-        tft.setTextColor(COL_TEXT, COL_BG);
-        tft.print(lab);
+        snprintf(lab, sizeof(lab), "%d", pct);
+        draw_ytick_label(lab, y, tickLen);
       }
     }
   }
@@ -396,7 +403,6 @@ static void draw_xticks_waveform()
   float rough = spanMs / 6.0f;
   float major = nice_step_125(rough);
   float minor = major * 0.5f;
-  bool firstMajor = true;
 
   for (float t = 0.0f; t <= spanMs + 0.01f * major; t += minor)
   {
@@ -412,14 +418,16 @@ static void draw_xticks_waveform()
       s_colVGridColor[col] = gridColor;
     }
   }
+  // No unit suffix on any tick (unlike the old firstMajor="Xms" approach):
+  // on a horizontal axis, a label that's a couple of characters wider than
+  // its neighbors risks running straight into them - the FFT X-axis never
+  // appended one for the same reason. The unit lives in the corner caption
+  // (draw_axis_unit_labels()) instead.
   for (float t = 0.0f; t <= spanMs + 0.01f * major; t += major)
   {
     int x = PLOT_X + (int)roundf((t / spanMs) * (PLOT_W - 1));
-    char num[12];
-    format_time_label(num, sizeof(num), t);
-    char lab[16];
-    snprintf(lab, sizeof(lab), firstMajor ? "%sms" : "%s", num);
-    firstMajor = false;
+    char lab[12];
+    format_time_label(lab, sizeof(lab), t);
     int16_t lbx, lby;
     uint16_t ltw, lth;
     tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
@@ -434,25 +442,31 @@ static void draw_xticks_waveform()
   }
 }
 
-// Y ticks for the waveform view: centered amplitude, ±gWaveYRange raw ADC
-// counts. Steps by integer multiples of `minor` (rather than the FFT Y
-// axis's fmodf-based major/minor test) so it stays exact on both sides of
-// zero - fmodf's sign behavior on negative values would otherwise misjudge
-// which ticks are major below the centerline.
+// Y ticks for the waveform view: centered amplitude, displayed in volts
+// (±gWaveYRange raw ADC counts, converted via ADC_VREF/ADC_FS) since raw
+// codes aren't a meaningful unit to read off a scope-style display. The
+// "nice" step is computed in volts directly, then converted back to counts
+// per tick only to find its pixel row - so gridlines land on round volt
+// values (0.5V, 1.0V, ...) rather than round-but-arbitrary code counts.
+// Steps by integer multiples of `minor` (rather than the FFT Y axis's
+// fmodf-based major/minor test) so it stays exact on both sides of zero -
+// fmodf's sign behavior on negative values would otherwise misjudge which
+// ticks are major below the centerline.
 static void draw_yticks_waveform()
 {
-  float range = gWaveYRange;
-  float rough = range / 3.0f;
+  float rangeV = gWaveYRange * ADC_VREF / ADC_FS;
+  float rough = rangeV / 3.0f;
   float major = nice_step_125(rough);
   float minor = major * 0.5f; // always exactly major/2, so "every 2nd step" below is exact
 
-  int maxStep = (int)floorf(range / minor);
+  int maxStep = (int)floorf(rangeV / minor);
 
   for (int step = maxStep; step >= -maxStep; --step)
   {
-    float v = step * minor;
+    float v = step * minor;                 // volts
+    float counts = v * ADC_FS / ADC_VREF;    // back to raw counts, for the pixel row
     bool major_ = (step % 2 == 0);
-    int y = y_from_amplitude((int16_t)roundf(v));
+    int y = y_from_amplitude((int16_t)roundf(counts));
 
     if (major_)
       tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
@@ -465,15 +479,30 @@ static void draw_yticks_waveform()
 
     if (major_)
     {
-      // No unit suffix here (unlike dB/% in FFT mode) - "counts" isn't
-      // worth the extra label width, and the HUD/title give enough context.
       char lab[12];
-      snprintf(lab, sizeof(lab), "%d", (int)roundf(v));
-      tft.setCursor(PLOT_X - 28, y - 3);
-      tft.setTextColor(COL_TEXT, COL_BG);
-      tft.print(lab);
+      snprintf(lab, sizeof(lab), "%.2f", (double)v);
+      draw_ytick_label(lab, y, tickLen);
     }
   }
+}
+
+// Small unit caption in each corner of the title row (empty either side of
+// the centered title, so it never competes for space with the tick labels
+// themselves): Y-axis unit top-left, X-axis unit top-right.
+static void draw_axis_unit_labels()
+{
+  const char *yUnit = (gDisplayMode == MODE_FFT) ? (gYScale == YS_DB ? "dB" : "%") : "V";
+  const char *xUnit = (gDisplayMode == MODE_FFT) ? "Hz" : "ms";
+
+  int labelRowY = PLOT_Y - 14;
+  tft.setTextColor(COL_TEXT, COL_BG);
+
+  tft.setCursor(2, labelRowY);
+  tft.print(yUnit);
+
+  int xUnitW = (int)strlen(xUnit) * 6;
+  tft.setCursor(SCREEN_W - 2 - xUnitW, labelRowY);
+  tft.print(xUnit);
 }
 
 void draw_axes(uint16_t N)
@@ -512,6 +541,7 @@ void draw_axes(uint16_t N)
     draw_xticks_waveform();
     draw_yticks_waveform();
   }
+  draw_axis_unit_labels();
 
   s_prevLineValid = false; // whole screen just got wiped, nothing to erase next frame
   gAxesDirty = false;

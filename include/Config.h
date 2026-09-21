@@ -62,7 +62,8 @@ static const int BASE_Y = PLOT_Y + PLOT_H - 1;
 #define FFT_MAX 4096
 
 // -------------------- Magnitude scaling -----------
-static const float ADC_FS = 4095.0f; // 12-bit ADC raw counts
+static const float ADC_FS = 4095.0f;   // 12-bit ADC raw counts
+static const float ADC_VREF = 3.3f;    // full-scale input voltage at ADC_ATTEN_DB_12
 
 // -------------------- Controls ---------------------
 static const uint16_t DEBOUNCE_MS = 25;
