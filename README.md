@@ -8,7 +8,7 @@ raw time-domain waveform, with hardware buttons and a serial console for control
 ## Features
 
 - **Two display modes**, swapped with the PAUSE button or `mode=` over serial. Each keeps its own
-  sample rate and target frame rate, so changing one mode's never affects the other's:
+  sample rate, so changing one mode's never affects the other's:
   - **Spectrum Analyser** — live FFT magnitude plot (linear or log frequency axis, dBFS or linear
     % full-scale amplitude axis, adjustable FFT length and bin aggregation, optional Hann window).
   - **Waveform Analyser** — raw time-domain trace ("scope" view), Y axis in real volts, X-axis
@@ -22,8 +22,10 @@ raw time-domain waveform, with hardware buttons and a serial console for control
   input, so this matters).
 - **ADC calibration** (see below): the chip's factory calibration data is used automatically, and
   there's an on-device interactive tool to calibrate against a real known voltage.
-- **120 FPS-capable rendering**: differential (erase-old/draw-new) redraws instead of full-screen
-  clears, 80MHz SPI, flicker-free HUD digit updates.
+- **Free-running rendering**: no frame-rate cap - frames come as fast as the FFT and drawing allow,
+  with the measured FPS on the HUD. The FFT is real-input (a half-length complex FFT plus a split
+  step, about twice as fast as a full complex one), and redraws are differential (one write per
+  changed plot column) over 80MHz SPI, with flicker-free HUD digit updates.
 - A 6-LED VU meter driven off the same peak-sample tracking as the display.
 - A custom pixel font (`Aurora7pt7b`/`Aurora4pt7b`, in `include/`) used for on-screen titles.
 
@@ -87,8 +89,7 @@ Connect at 115200 baud and type `help` for the full list. Highlights:
 | `stats` | print current settings |
 | `rawdump` | diagnostic: print raw I2S words from the ADC, before the sample pairing is reduced |
 | `fs=2000..200000` | set sample rate (Hz) for the current mode |
-| `n=32\|64\|128\|256\|512\|1024\|2048\|4096` | set FFT length |
-| `fps=10..120` | target frame rate for the current mode |
+| `n=32\|64\|128\|256\|512\|1024\|2048\|4096\|8192` | set FFT length |
 | `agg=1..64` | bin aggregation |
 | `xscale=lin\|log` | frequency axis scale |
 | `yscale=db\|lin` | amplitude axis scale |

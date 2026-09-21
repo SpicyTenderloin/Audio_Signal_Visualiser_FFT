@@ -60,9 +60,11 @@ static const int BASE_Y = PLOT_Y + PLOT_H - 1;
 #define COL_LINE ILI9341_CYAN
 
 // -------------------- Buffers ---------------------
-// esp-dsp's bundled FFT table generator caps out at 4096 (CONFIG_DSP_MAX_FFT_SIZE,
-// baked into this precompiled library) - dsps_fft2r_init_fc32() fails above that.
-#define FFT_MAX 4096
+// Longest FFT (in real samples) the firmware supports. The real-input FFT
+// (RealFFT.h) runs as a complex FFT of HALF this length, and esp-dsp's bundled
+// table generator caps out at 4096 points (CONFIG_DSP_MAX_FFT_SIZE, baked into
+// the precompiled library) - so 8192 is the most this build can reach.
+#define FFT_MAX 8192
 
 // -------------------- Magnitude scaling -----------
 static const float ADC_FS = 4095.0f;   // 12-bit ADC raw counts

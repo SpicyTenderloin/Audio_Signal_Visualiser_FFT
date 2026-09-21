@@ -17,7 +17,7 @@ void print_controls()
 {
   Serial.println();
   Serial.println(F("=== Controls (Buttons) ==="));
-  Serial.println(F("  PAUSE:         switch between FFT spectrum and waveform display (each keeps its own Fs and FPS)"));
+  Serial.println(F("  PAUSE:         switch between FFT spectrum and waveform display (each keeps its own Fs)"));
   Serial.println(F("  AGG- / AGG+:   FFT: aggregation finer/coarser | Waveform: Y (amplitude) zoom"));
   Serial.println(F("  N- / N+:       FFT: length down/up | Waveform: no effect"));
   Serial.println(F("  ZOOM- / ZOOM+: FFT: horizontal zoom (Fmax -/+5%) | Waveform: X (time) zoom via Fs (-/+5%)"));
@@ -27,8 +27,7 @@ void print_controls()
   Serial.println(F("  stats               # print current settings"));
   Serial.println(F("  rawdump             # diagnostic: print raw I2S words from the ADC (play a steady tone first)"));
   Serial.println(F("  fs=2000..200000     # set sample rate (current mode only), e.g. fs=15000"));
-  Serial.println(F("  n=32|64|128|256|512|1024|2048|4096   # e.g. n=512"));
-  Serial.println(F("  fps=10..120         # target frame rate (current mode only), e.g. fps=60"));
+  Serial.println(F("  n=32|64|128|256|512|1024|2048|4096|8192   # e.g. n=512"));
   Serial.println(F("  agg=1..64           # e.g. agg=4 (coarser plot)"));
   Serial.println(F("  xscale=lin|log      # set X axis scale, e.g. xscale=lin"));
   Serial.println(F("  yscale=db|lin       # set Y axis scale (dBFS or linear %FS), e.g. yscale=lin"));
@@ -53,25 +52,28 @@ void print_stats()
     uint16_t N = N_CHOICES[gNidx];
     int bpp = bins_per_point(N);
     float df_eff = (float)gFs / N * bpp;
-    int hop = clampi((int)(gFs / gFPS), 1, N);
-    float overlapPct = 100.0f * (1.0f - (float)hop / (float)N);
-    Serial.printf("Mode=FFT  Fs=%lu  N=%u  Df=%.2fHz  FPS(target)=%u  BPP=%d  Overlap=%.0f%%  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
-                  (unsigned long)gFs, N, df_eff, gFPS, bpp, overlapPct, (gXScale == XS_LIN ? "LIN" : "LOG"),
+    Serial.printf("Mode=FFT  Fs=%lu  N=%u  Df=%.2fHz  BPP=%d  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
+                  (unsigned long)gFs, N, df_eff, bpp, (gXScale == XS_LIN ? "LIN" : "LOG"),
                   (gYScale == YS_DB ? "dB" : "LIN"), gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
     Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
-    Serial.printf("FPS(actual)=%.1f  Frame=%.2fms  FFT=%.2fms\r\n",
-                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0);
+    Serial.printf("FPS=%.1f  Frame=%.2fms  FFT=%.2fms  Draw=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0,
+                  (double)gLastDrawUs / 1000.0);
   }
   else // MODE_WAVEFORM
   {
     float spanMs = (float)PLOT_W / (float)gFs * 1000.0f;
-    Serial.printf("Mode=Waveform  Fs=%lu  Span=%.2fms (%d samples)  FPS(target)=%u  Y range: +/-%.0f counts\r\n",
-                  (unsigned long)gFs, (double)spanMs, PLOT_W, gFPS, (double)gWaveYRange);
-    Serial.printf("FPS(actual)=%.1f  Frame=%.2fms\r\n",
-                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0);
+    Serial.printf("Mode=Waveform  Fs=%lu  Span=%.2fms (%d samples)  Y range: +/-%.0f counts\r\n",
+                  (unsigned long)gFs, (double)spanMs, PLOT_W, (double)gWaveYRange);
+    Serial.printf("FPS=%.1f  Frame=%.2fms  Draw=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastDrawUs / 1000.0);
   }
   const char *calSrc = gCalSource == CAL_USER ? "user" : gCalSource == CAL_EFUSE ? "efuse" : "none";
   Serial.printf("ADC cal: source=%s  volts=raw*%.6f+%.6f\r\n", calSrc, (double)gCalGain, (double)gCalOffset);
+  // RAM is what really limits the FFT size (every buffer scales with N), so
+  // show the headroom: total free, and the biggest single block still free.
+  Serial.printf("Heap: free=%u bytes  largest block=%u bytes\r\n",
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 }
 
 // Suggests the fs=/n= combo whose visible bin count (0..fmaxHz) best fills
@@ -126,10 +128,6 @@ void apply_command(const char *s)
         setNidx(i);
         break;
       }
-  }
-  else if (!strncmp(s, "fps=", 4))
-  {
-    setFPS(atoi(s + 4));
   }
   else if (!strncmp(s, "agg=", 4))
   {

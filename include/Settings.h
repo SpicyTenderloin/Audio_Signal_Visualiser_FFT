@@ -26,8 +26,6 @@ void setYMax(float dB);
 void setYMin(float dB);
 
 // -------------------- Other setters -----------------
-// Sets the display refresh rate cap, clamped to [10, 120] FPS.
-void setFPS(uint16_t v);
 // Selects an FFT length by index into N_CHOICES and rebuilds the window/ISR state.
 void setNidx(uint8_t i);
 // Sets the bin-aggregation factor (coarser/finer plot), clamped to [1, 64].

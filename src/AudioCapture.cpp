@@ -96,6 +96,14 @@ int16_t capture_sample_at(uint32_t absPos)
   return capBuf[absPos % CAP_BUF_LEN];
 }
 
+void capture_spans(uint32_t absPos, uint16_t n, CaptureSpan out[2])
+{
+  const uint32_t idx = absPos % CAP_BUF_LEN;
+  const uint16_t first = (idx + n <= (uint32_t)CAP_BUF_LEN) ? n : (uint16_t)(CAP_BUF_LEN - idx);
+  out[0] = {capBuf + idx, first};
+  out[1] = {capBuf, (uint16_t)(n - first)};
+}
+
 // Drains samples the I2S/DMA hardware has already pulled from the ADC into
 // the circular capture buffer. Has to be a task, not an ISR, since
 // i2s_read() blocks until DMA data is available. Each 16-bit word returned
@@ -109,7 +117,7 @@ int16_t capture_sample_at(uint32_t absPos)
 // repeat of the first (serial "rawdump": 32 of 32 pairs identical, with and
 // without a tone), so the ADC really converts at gFs and no conversions are
 // wasted - keeping one word per pair makes gCapWritePos count samples at
-// gFs, which is what the hop gate, the FFT bin frequencies and the waveform
+// gFs, which is what the new-sample check, the FFT bin frequencies and the waveform
 // time axis all assume.
 static void capture_drain_task(void *pvParameters)
 {

@@ -3,9 +3,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 
-#include "esp_dsp.h"
-#include "dsps_fft2r.h"
-
 #include "Config.h"
 #include "Globals.h"
 #include "DSPUtils.h"
@@ -17,6 +14,7 @@
 #include "SerialConsole.h"
 #include "SpectrumTask.h"
 #include "Calibration.h"
+#include "RealFFT.h"
 
 void setup()
 {
@@ -33,10 +31,9 @@ void setup()
   gFmaxHz = 2500.0f;
   FsNRecommendation rec = recommend_fs_n(gFmaxHz);
   gFs = rec.fs;
-  // The waveform mode starts from the same rate and FPS; from here on the
-  // two modes' Fs/FPS are independent (see toggleDisplayMode()).
+  // The waveform mode starts from the same rate; from here on the two modes'
+  // Fs are independent (see toggleDisplayMode()).
   gInactiveFs = gFs;
-  gInactiveFPS = gFPS;
   for (uint8_t i = 0; i < sizeof(N_CHOICES) / sizeof(N_CHOICES[0]); i++)
     if (N_CHOICES[i] == rec.N)
     {
@@ -77,17 +74,17 @@ void setup()
   delay(150);
   tft.fillScreen(COL_BG);
 
-  // esp-dsp init (real FFT tables, sized for the largest N we support).
-  // esp-dsp's table generator has a hard cap (CONFIG_DSP_MAX_FFT_SIZE, 4096
-  // in this build) - if FFT_MAX ever exceeds it, this fails and every FFT
-  // call afterwards runs against uninitialized tables, so check it rather
-  // than silently continuing into an eventual crash.
-  esp_err_t fftInitErr = dsps_fft2r_init_fc32(nullptr, FFT_MAX);
-  if (fftInitErr != ESP_OK)
+  // FFT tables: esp-dsp's twiddles for the half-length complex FFT the real
+  // FFT runs on, plus the post-processing twiddles (see RealFFT.h). esp-dsp's
+  // table generator has a hard cap (CONFIG_DSP_MAX_FFT_SIZE, 4096 in this
+  // build) on that half length - if FFT_MAX/2 ever exceeds it, or memory runs
+  // out, init fails and every FFT after would run on uninitialized tables, so
+  // halt with a clear message rather than continuing into an eventual crash.
+  if (!realfft_init())
   {
-    Serial.printf("FATAL: dsps_fft2r_init_fc32(FFT_MAX=%d) failed (err=%d). "
-                  "FFT_MAX likely exceeds esp-dsp's CONFIG_DSP_MAX_FFT_SIZE. Halting.\r\n",
-                  FFT_MAX, (int)fftInitErr);
+    Serial.printf("FATAL: FFT table init failed for FFT_MAX=%d (out of memory, or FFT_MAX/2 "
+                  "exceeds esp-dsp's CONFIG_DSP_MAX_FFT_SIZE). Halting.\r\n",
+                  FFT_MAX);
     while (true)
       delay(1000);
   }

@@ -7,11 +7,9 @@ Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 // recommend_fs_n() (best fidelity for the default Fmax) before anything
 // reads them - these are just fallbacks in case that were ever skipped.
 volatile uint32_t gFs = 40000;
-volatile uint16_t gFPS = 120;
 uint32_t gInactiveFs = 40000; // the waveform mode's, until first switched to
-uint16_t gInactiveFPS = 120;
 
-const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
+const uint16_t N_CHOICES[9] = {32, 64, 128, 256, 512, 1024, 2048, 4096, 8192};
 volatile uint8_t gNidx = 5; // N=1024
 volatile uint8_t gAgg = 1;
 volatile float gFmaxHz = 2500.0f;
@@ -52,6 +50,7 @@ float *gPrefixPow = nullptr;
 
 volatile float gMeasuredFPS = 0.0f;
 volatile uint32_t gLastFFTus = 0;
+volatile uint32_t gLastDrawUs = 0;
 volatile uint32_t gLastFrameUs = 0;
 float gRefPow = 1.0f;
 
@@ -62,8 +61,8 @@ uint32_t fft_mode_fs()
 
 void alloc_fft_buffers()
 {
-  fft_buf = new (std::nothrow) float[2 * FFT_MAX];
-  check_alloc(fft_buf, "fft_buf", 2 * FFT_MAX * sizeof(float));
+  fft_buf = new (std::nothrow) float[FFT_MAX];
+  check_alloc(fft_buf, "fft_buf", FFT_MAX * sizeof(float));
 
   window_buf = new (std::nothrow) float[FFT_MAX];
   check_alloc(window_buf, "window_buf", FFT_MAX * sizeof(float));

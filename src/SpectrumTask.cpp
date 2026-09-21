@@ -1,8 +1,6 @@
 #include "SpectrumTask.h"
 
 #include <Arduino.h>
-#include "esp_dsp.h"
-#include "dsps_fft2r.h"
 
 #include "Config.h"
 #include "Globals.h"
@@ -10,24 +8,32 @@
 #include "Display.h"
 #include "VUMeter.h"
 #include "AudioCapture.h"
+#include "RealFFT.h"
 
-// Runs forever on core 0: pulls the newest (possibly overlapping) window of
-// samples out of the capture ring buffer and redraws the plot - either the
-// FFT spectrum or the raw waveform, depending on gDisplayMode.
+// Runs forever on core 0: pulls the newest window of samples out of the
+// capture ring buffer and redraws the plot - either the FFT spectrum or the
+// raw waveform, depending on gDisplayMode.
 //
-// The hop (new samples required before the next window) is sized from the
-// *target frame rate*, not from the window size: hop = Fs/gFPS, clamped to
-// the window. That keeps the wait for fresh data roughly constant (~1/gFPS)
-// no matter how large the window gets - a large FFT N automatically gets
-// heavier overlap to compensate, instead of the frame rate collapsing as N
-// grows. The waveform window is always exactly PLOT_W samples (one per
-// pixel column), so the same clamp just bounds hop by the plot width there.
+// There is no frame-rate target. The loop runs flat out: each pass takes the
+// freshest window (the N samples ending at the newest one) as soon as at
+// least one new sample has arrived since the previous pass, so consecutive
+// windows overlap by however much the frame time allows. A bigger FFT just
+// makes each frame cost more; it doesn't change how the loop is paced. The
+// measured rate is shown on the HUD.
+//
+// Because the loop never sleeps while there is data to show, core 0's idle
+// task never gets to run and would trip the idle-task watchdog. Nothing here
+// needs the idle task (no tasks are deleted, no power management), so it is
+// taken off the watchdog instead of being fed by an artificial sleep that
+// would cap the frame rate.
 static void spectrum_task(void *pvParameters)
 {
   static int16_t waveSamples[PLOT_W];
   uint32_t lastPos = capture_write_pos();
   uint32_t fpsWindowStart = 0;
   uint16_t fpsFrameCount = 0;
+
+  disableCore0WDT();
 
   for (;;)
   {
@@ -48,18 +54,17 @@ static void spectrum_task(void *pvParameters)
 
     if (gPaused)
     {
-      vTaskDelay(pdMS_TO_TICKS(1000 / gFPS));
+      vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
 
     const bool isFFT = (gDisplayMode == MODE_FFT);
     const uint16_t N = isFFT ? N_CHOICES[gNidx] : (uint16_t)PLOT_W;
-    int hop = clampi((int)(gFs / gFPS), 1, N);
 
     uint32_t pos = capture_write_pos();
-    if ((uint32_t)(pos - lastPos) < (uint32_t)hop)
+    if (pos == lastPos)
     {
-      vTaskDelay(1); // not enough new samples yet; let capture fill more
+      vTaskDelay(1); // nothing new to show yet; let capture run
       continue;
     }
     lastPos = pos; // always take the freshest window rather than building a backlog
@@ -71,25 +76,34 @@ static void spectrum_task(void *pvParameters)
     if (isFFT)
     {
       // Read straight out of the capture ring buffer into fft_buf, windowing
-      // as we go - no intermediate raw-sample buffer needed. Peak (for the
-      // VU meter) is tracked from the same pass, pre-window.
-      for (uint16_t i = 0; i < N; i++)
+      // as we go - no intermediate raw-sample buffer needed. The N real
+      // samples are stored consecutively, which is exactly the packed
+      // (x[2m] + j*x[2m+1]) layout realfft_forward() wants. Peak (for the VU
+      // meter) is tracked from the same pass, pre-window.
+      CaptureSpan spans[2];
+      capture_spans(start, N, spans);
+      const bool hann = gUseHann;
+      uint16_t i = 0;
+      for (int part = 0; part < 2; ++part)
       {
-        int16_t s = capture_sample_at(start + i);
-        int16_t a = s >= 0 ? s : (int16_t)-s;
-        if (a > peakAbs)
-          peakAbs = a;
+        const int16_t *src = spans[part].p;
+        const uint16_t count = spans[part].n;
+        for (uint16_t j = 0; j < count; ++j, ++i)
+        {
+          const int16_t s = src[j];
+          const int16_t a = s >= 0 ? s : (int16_t)-s;
+          if (a > peakAbs)
+            peakAbs = a;
 
-        float v = (float)s;
-        if (gUseHann)
-          v *= window_buf[i];
-        fft_buf[2 * i] = v;
-        fft_buf[2 * i + 1] = 0.0f;
+          float v = (float)s;
+          if (hann)
+            v *= window_buf[i];
+          fft_buf[i] = v;
+        }
       }
 
       uint32_t fftStartUs = micros();
-      dsps_fft2r_fc32(fft_buf, N);
-      dsps_bit_rev_fc32(fft_buf, N);
+      realfft_forward(fft_buf, N);
       gLastFFTus = micros() - fftStartUs;
 
       // --- Build power spectrum and prefix sums (skip DC) ---
@@ -103,15 +117,11 @@ static void spectrum_task(void *pvParameters)
       float refAmp = (N / 2.0f) * ADC_FS * (gUseHann ? gWindowGain : 1.0f);
       gRefPow = refAmp * refAmp; // power ref for dBFS
 
-      gPrefixPow[0] = 0.0f; // so k0-1 works when k0==1
-      for (int k = 1; k < Kvis; ++k)
-      {
-        float re = fft_buf[2 * k], im = fft_buf[2 * k + 1];
-        float p = re * re + im * im; // power (no sqrt)
-        gPrefixPow[k] = gPrefixPow[k - 1] + p;
-      }
+      realfft_power_prefix(fft_buf, N, Kvis, gPrefixPow);
 
+      uint32_t drawStartUs = micros();
       draw_line_spectrum(N); // also redraws the HUD if gHUDDirty
+      gLastDrawUs = micros() - drawStartUs;
     }
     else // MODE_WAVEFORM
     {
@@ -124,16 +134,18 @@ static void spectrum_task(void *pvParameters)
         waveSamples[i] = s;
       }
 
+      uint32_t drawStartUs = micros();
       draw_waveform(waveSamples); // also redraws the HUD if gHUDDirty
+      gLastDrawUs = micros() - drawStartUs;
     }
 
     setVU(vu_from_peakAbs(peakAbs));
 
     gLastFrameUs = micros() - frameStartUs;
 
-    // Measured (actual) frame rate over a rolling 1s window - distinct from
-    // gFPS, the target cap. Redraws just the small FPS box, not the whole
-    // HUD, so the rest of the status band doesn't flicker once/sec.
+    // Measured frame rate over a rolling 1s window. Redraws just the small
+    // FPS box, not the whole HUD, so the rest of the status band doesn't
+    // flicker once/sec.
     fpsFrameCount++;
     uint32_t nowUs = micros();
     if (fpsWindowStart == 0)
@@ -146,21 +158,6 @@ static void spectrum_task(void *pvParameters)
       fpsWindowStart = nowUs;
       draw_hud_fps();
     }
-
-    // FPS cap. Sleeps only for whatever is left of this frame's period - the
-    // frame's own compute+draw time already counts toward it, so sleeping a
-    // full period on top of that (as this used to) nearly halved the rate
-    // whenever a frame was expensive. Always a real, yielding delay of at
-    // least one tick - never delayMicroseconds()/busy-wait or a zero-length
-    // delay: this task is ready to run almost every iteration (the hop is
-    // sized to arrive right on the FPS cadence), so a non-yielding wait would
-    // pin core 0 and starve its idle task, tripping the idle-task watchdog
-    // reset. Sample timing is not this sleep's job: the check at the top of
-    // the loop still waits for a full hop of fresh samples before any frame.
-    const uint32_t periodUs = 1000000UL / gFPS;
-    const uint32_t spentUs = micros() - frameStartUs;
-    TickType_t sleepTicks = (spentUs < periodUs) ? pdMS_TO_TICKS((periodUs - spentUs) / 1000) : 0;
-    vTaskDelay(sleepTicks > 0 ? sleepTicks : 1);
   }
 }
 

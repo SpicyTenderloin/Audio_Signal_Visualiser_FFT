@@ -42,3 +42,15 @@ uint32_t capture_write_pos();
 // Returns the single captured sample at absolute position absPos (as
 // returned by/derived from capture_write_pos()).
 int16_t capture_sample_at(uint32_t absPos);
+
+// A contiguous run of samples inside the ring buffer.
+struct CaptureSpan
+{
+  const int16_t *p;
+  uint16_t n;
+};
+// Splits the n samples starting at absolute position absPos (n < CAP_BUF_LEN)
+// into at most two contiguous runs - the second is empty unless the window
+// wraps past the end of the buffer - so a caller can walk them with plain
+// pointer loops instead of paying a modulo per sample via capture_sample_at().
+void capture_spans(uint32_t absPos, uint16_t n, CaptureSpan out[2]);

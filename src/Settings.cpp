@@ -98,12 +98,6 @@ void setYMin(float dB)
   gHUDDirty = true;
 }
 
-void setFPS(uint16_t v)
-{
-  gFPS = clampi(v, 10, 120);
-  gHUDDirty = true;
-}
-
 void setNidx(uint8_t i)
 {
   if (i >= sizeof(N_CHOICES) / sizeof(N_CHOICES[0]))
@@ -147,16 +141,13 @@ void setHann(bool on)
 
 void toggleDisplayMode()
 {
-  // Each mode keeps its own Fs and FPS target. gFs/gFPS always hold the
-  // active mode's values (everything else reads them directly), so on a
-  // switch, swap them with the parked values of the mode we're switching to
-  // and reprogram the capture hardware for the restored rate.
+  // Each mode keeps its own Fs. gFs always holds the active mode's value
+  // (everything else reads it directly), so on a switch, swap it with the
+  // parked value of the mode we're switching to and reprogram the capture
+  // hardware for the restored rate.
   uint32_t fs = gInactiveFs;
   gInactiveFs = gFs;
   gFs = fs;
-  uint16_t fps = gInactiveFPS;
-  gInactiveFPS = gFPS;
-  gFPS = fps;
   set_sample_rate(gFs);
 
   gDisplayMode = (gDisplayMode == MODE_FFT) ? MODE_WAVEFORM : MODE_FFT;

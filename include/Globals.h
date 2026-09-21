@@ -8,17 +8,14 @@
 extern Adafruit_ILI9341 tft;
 
 // -------------------- Settings -----------------------
-// Sample rate and FPS target are per display mode, so tuning one mode never
-// moves the other's. gFs/gFPS always hold the ACTIVE mode's values - capture,
-// hop sizing and the axes all read them directly - while gInactiveFs/
-// gInactiveFPS park the values of the mode that isn't showing.
-// toggleDisplayMode() swaps the two pairs on every switch.
+// Sample rate is per display mode, so tuning one mode never moves the
+// other's. gFs always holds the ACTIVE mode's value - capture and the axes
+// read it directly - while gInactiveFs parks the value of the mode that isn't
+// showing. toggleDisplayMode() swaps them on every switch.
 extern volatile uint32_t gFs;  // Hz, sample rate (serial-adjustable)
-extern volatile uint16_t gFPS;
 extern uint32_t gInactiveFs;
-extern uint16_t gInactiveFPS;
 
-extern const uint16_t N_CHOICES[8];
+extern const uint16_t N_CHOICES[9];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
 extern volatile uint8_t gAgg;          // aggregation (>=1) => bpp defaults to 1
 extern volatile float gFmaxHz;         // horizontal max frequency
@@ -68,7 +65,7 @@ extern volatile float gWaveYRange;
 // Heap-allocated (not fixed-size static arrays) so FFT_MAX can be sized
 // well beyond what the linker's static DRAM segment alone can fit -
 // allocated once by alloc_fft_buffers(), called first thing in setup().
-extern float *fft_buf;    // size 2*FFT_MAX
+extern float *fft_buf;    // size FFT_MAX: N real samples, read as N/2 complex (see RealFFT.h)
 extern float *window_buf; // size FFT_MAX
 void alloc_fft_buffers();
 
@@ -128,12 +125,14 @@ extern bool gHUDDirty;
 extern float *gPrefixPow; // size FFT_MAX/2; prefix sums for O(1) bin-range averages, heap-allocated (see alloc_fft_buffers())
 
 // -------------------- Performance stats -----------
-// Actual measured frame rate (frames/sec spectrum_task delivers), updated
-// once/sec - distinct from gFPS, which is only the *target* cap.
+// Measured frame rate (frames/sec spectrum_task delivers), updated once/sec.
+// There is no target - the loop runs as fast as compute and drawing allow.
 extern volatile float gMeasuredFPS;
-// Time spent in the two FFT calls, and total compute+draw time, for the
-// most recently processed frame (microseconds). Excludes the idle wait for
-// fresh samples, so this is what actually competes for the frame budget.
+// Time spent in the FFT, in drawing the plot, and in the whole frame
+// (compute + draw), for the most recently processed frame (microseconds).
+// Excludes the idle wait for fresh samples, so this is what actually
+// competes for the frame budget.
 extern volatile uint32_t gLastFFTus;
+extern volatile uint32_t gLastDrawUs;
 extern volatile uint32_t gLastFrameUs;
 extern float gRefPow;                 // full-scale power for dBFS reference
