@@ -515,7 +515,7 @@ static void draw_axis_unit_labels()
   int yx = (PLOT_X - yw) / 2;
   if (yx < 0)
     yx = 0;
-  tft.setCursor(yx, 4);
+  tft.setCursor(yx, 7);
   tft.print(yUnit);
 
   int labelY = BASE_Y + 10;
