@@ -7,6 +7,11 @@
 static char cmdBuf[96];
 static uint8_t cmdLen = 0;
 
+// Set by "cal clear" - the next line typed is treated as its y/n answer
+// instead of a normal command, so erasing a saved calibration always needs
+// an explicit confirmation.
+static bool s_pendingCalClearConfirm = false;
+
 void print_controls()
 {
   Serial.println();
@@ -35,7 +40,7 @@ void print_controls()
   Serial.println(F("  pause               # toggle pause"));
   Serial.println(F("  cal                 # enter interactive ADC calibration (see on-screen/button prompts)"));
   Serial.println(F("  cal cancel          # exit calibration mode without saving"));
-  Serial.println(F("  cal clear           # erase the saved user calibration (revert to eFuse/naive)"));
+  Serial.println(F("  cal clear           # erase the saved user calibration (revert to eFuse/naive) - asks y/n first"));
   Serial.println();
 }
 
@@ -84,6 +89,16 @@ void apply_command(const char *s)
 {
   if (!s || !*s)
     return;
+
+  if (s_pendingCalClearConfirm)
+  {
+    s_pendingCalClearConfirm = false;
+    if (!strcasecmp(s, "y") || !strcasecmp(s, "yes"))
+      calibration_clear_saved();
+    else
+      Serial.println(F("Cancelled - calibration not cleared."));
+    return;
+  }
   if (!strcmp(s, "help"))
   {
     print_controls();
@@ -169,7 +184,8 @@ void apply_command(const char *s)
   }
   else if (!strcmp(s, "cal clear"))
   {
-    calibration_clear_saved();
+    Serial.println(F("Really clear the saved calibration? (y/n)"));
+    s_pendingCalClearConfirm = true;
   }
   else
   {

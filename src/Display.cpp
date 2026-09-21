@@ -831,15 +831,21 @@ void draw_calibration_screen(bool full)
   {
     tft.fillScreen(COL_BG);
 
+    // Title in Aurora7pt7b, same as the main screens (draw_axes()) - same
+    // band (2..PLOT_Y-2) and same real-ink-bounds centering, for a
+    // consistent title treatment across every screen in the project.
     const char *title = "ADC Calibration";
+    tft.setFont(&aurora_247pt7b);
     int16_t bx, by;
     uint16_t tw, th;
-    tft.setTextSize(2);
     tft.getTextBounds(title, 0, 0, &bx, &by, &tw, &th);
-    tft.setCursor((SCREEN_W - (int)tw) / 2, 6);
+    int tx = (SCREEN_W - (int)tw) / 2 - bx;
+    int bandTop = 2, bandBottom = PLOT_Y - 2;
+    int inkTop = bandTop + ((bandBottom - bandTop) - (int)th) / 2;
+    tft.setCursor(tx, inkTop - by);
     tft.setTextColor(COL_TITLE, COL_BG);
     tft.print(title);
-    tft.setTextSize(1);
+    tft.setFont(NULL);
 
     tft.setTextColor(COL_TEXT, COL_BG);
     char buf[40];
@@ -857,12 +863,17 @@ void draw_calibration_screen(bool full)
       y += 12;
     }
 
-    tft.setCursor(4, SCREEN_H - 44);
-    tft.print("ZOOM: preset volt   AGG: +/-0.01V");
-    tft.setCursor(4, SCREEN_H - 32);
-    tft.print("PAUSE: capture point");
-    tft.setCursor(4, SCREEN_H - 20);
-    tft.print("HOLD PAUSE: finish   N-: undo point");
+    // Each line horizontally centered on its own (rather than all left-flush
+    // at a fixed x, which read as ragged given how much their lengths vary).
+    const char *l1 = "ZOOM: preset volt   AGG: +/-0.01V";
+    const char *l2 = "PAUSE: capture point";
+    const char *l3 = "HOLD PAUSE: finish   N-: undo point";
+    tft.setCursor((SCREEN_W - (int)strlen(l1) * 6) / 2, SCREEN_H - 44);
+    tft.print(l1);
+    tft.setCursor((SCREEN_W - (int)strlen(l2) * 6) / 2, SCREEN_H - 32);
+    tft.print(l2);
+    tft.setCursor((SCREEN_W - (int)strlen(l3) * 6) / 2, SCREEN_H - 20);
+    tft.print(l3);
   }
 
   draw_cal_live_values();
