@@ -33,6 +33,10 @@ void setup()
   gFmaxHz = 2500.0f;
   FsNRecommendation rec = recommend_fs_n(gFmaxHz);
   gFs = rec.fs;
+  // The waveform mode starts from the same rate and FPS; from here on the
+  // two modes' Fs/FPS are independent (see toggleDisplayMode()).
+  gInactiveFs = gFs;
+  gInactiveFPS = gFPS;
   for (uint8_t i = 0; i < sizeof(N_CHOICES) / sizeof(N_CHOICES[0]); i++)
     if (N_CHOICES[i] == rec.N)
     {

@@ -37,6 +37,55 @@ void set_sample_rate(uint32_t fs)
   i2s_set_sample_rates(I2S_PORT, fs);
 }
 
+// Raw-word diagnostic (serial "rawdump"): a snapshot of the start of one
+// i2s_read(), taken by the drain task BEFORE its keep-one-of-two decimation
+// so the raw word pairs can be inspected. Handshake is two flags - the
+// console sets Wanted, the drain task fills the buffer and sets Ready.
+static const size_t RAW_DUMP_WORDS = 64; // even: it's printed as pairs
+static uint16_t s_rawDump[RAW_DUMP_WORDS];
+static volatile bool s_rawDumpWanted = false;
+static volatile bool s_rawDumpReady = false;
+
+// Prints one snapshot of raw I2S words as pairs, with a summary that shows
+// whether the second word of each pair repeats the first (identical values,
+// so the ADC really runs at the configured rate) or is a separate
+// conversion (values differ by about as much as neighbouring pairs do).
+// Best read with a steady tone playing, so real conversions differ visibly.
+void capture_print_raw_dump()
+{
+  s_rawDumpReady = false;
+  s_rawDumpWanted = true;
+  const uint32_t t0 = millis();
+  while (!s_rawDumpReady && millis() - t0 < 500)
+    delay(1);
+  if (!s_rawDumpReady)
+  {
+    s_rawDumpWanted = false;
+    Serial.println(F("rawdump: timed out waiting for capture data."));
+    return;
+  }
+  __sync_synchronize();
+
+  Serial.println(F("Raw I2S words, one pair per line: full word in hex, 12-bit ADC value in decimal."));
+  const int pairs = (int)(RAW_DUMP_WORDS / 2);
+  int identical = 0;
+  long pairDiff = 0, stepDiff = 0;
+  for (int p = 0; p < pairs; p++)
+  {
+    const uint16_t a = s_rawDump[2 * p], b = s_rawDump[2 * p + 1];
+    const int va = a & 0x0FFF, vb = b & 0x0FFF;
+    Serial.printf("  %2d: 0x%04X (%4d)   0x%04X (%4d)   diff=%+d\r\n", p, a, va, b, vb, vb - va);
+    if (va == vb)
+      identical++;
+    pairDiff += abs(vb - va);
+    if (p + 1 < pairs)
+      stepDiff += abs((int)(s_rawDump[2 * p + 2] & 0x0FFF) - vb);
+  }
+  Serial.printf("Pairs with identical ADC value: %d of %d\r\n", identical, pairs);
+  Serial.printf("Mean |difference| within a pair: %.2f   from a pair to the next: %.2f\r\n",
+                (double)pairDiff / pairs, (double)stepDiff / (pairs - 1));
+}
+
 uint32_t capture_write_pos()
 {
   return gCapWritePos;
@@ -52,9 +101,20 @@ int16_t capture_sample_at(uint32_t absPos)
 // i2s_read() blocks until DMA data is available. Each 16-bit word returned
 // carries a 12-bit ADC reading in its low bits (the built-in-ADC-mode
 // format) - mask off the rest before treating it as a sample.
+//
+// The stream carries TWO words per sample period at the configured rate
+// (stereo I2S framing): a 1kHz test tone read as 500Hz when every word was
+// treated as its own sample, and the frame loop ran ~19% faster than its
+// sample-availability gate allows. The second word of each pair is an exact
+// repeat of the first (serial "rawdump": 32 of 32 pairs identical, with and
+// without a tone), so the ADC really converts at gFs and no conversions are
+// wasted - keeping one word per pair makes gCapWritePos count samples at
+// gFs, which is what the hop gate, the FFT bin frequencies and the waveform
+// time axis all assume.
 static void capture_drain_task(void *pvParameters)
 {
   static uint16_t raw[I2S_DMA_BUF_LEN * 2];
+  uint32_t wordIdx = 0; // running across reads so the keep-one-of-two pattern never slips
   for (;;)
   {
     size_t bytesRead = 0;
@@ -69,8 +129,19 @@ static void capture_drain_task(void *pvParameters)
     }
 
     size_t n = bytesRead / sizeof(uint16_t);
+
+    if (s_rawDumpWanted && n >= RAW_DUMP_WORDS)
+    {
+      memcpy(s_rawDump, raw, sizeof(s_rawDump));
+      __sync_synchronize(); // buffer contents visible before the flag is
+      s_rawDumpWanted = false;
+      s_rawDumpReady = true;
+    }
+
     for (size_t i = 0; i < n; i++)
     {
+      if (wordIdx++ & 1)
+        continue; // second word of the pair - see the note above
       int16_t centered = (int16_t)(raw[i] & 0x0FFF) - (int16_t)gDC;
       uint32_t pos = gCapWritePos;
       capBuf[pos % CAP_BUF_LEN] = centered;

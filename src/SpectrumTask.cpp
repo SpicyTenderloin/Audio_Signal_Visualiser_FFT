@@ -147,11 +147,20 @@ static void spectrum_task(void *pvParameters)
       draw_hud_fps();
     }
 
-    // FPS cap. A real (yielding) delay, not delayMicroseconds()/busy-wait: with
-    // the hop now sized to arrive right on the FPS cadence, this task is ready
-    // to run almost every iteration, so a non-yielding wait here would pin
-    // core 0 and starve its idle task, tripping the idle-task watchdog reset.
-    vTaskDelay(pdMS_TO_TICKS(1000 / gFPS));
+    // FPS cap. Sleeps only for whatever is left of this frame's period - the
+    // frame's own compute+draw time already counts toward it, so sleeping a
+    // full period on top of that (as this used to) nearly halved the rate
+    // whenever a frame was expensive. Always a real, yielding delay of at
+    // least one tick - never delayMicroseconds()/busy-wait or a zero-length
+    // delay: this task is ready to run almost every iteration (the hop is
+    // sized to arrive right on the FPS cadence), so a non-yielding wait would
+    // pin core 0 and starve its idle task, tripping the idle-task watchdog
+    // reset. Sample timing is not this sleep's job: the check at the top of
+    // the loop still waits for a full hop of fresh samples before any frame.
+    const uint32_t periodUs = 1000000UL / gFPS;
+    const uint32_t spentUs = micros() - frameStartUs;
+    TickType_t sleepTicks = (spentUs < periodUs) ? pdMS_TO_TICKS((periodUs - spentUs) / 1000) : 0;
+    vTaskDelay(sleepTicks > 0 ? sleepTicks : 1);
   }
 }
 

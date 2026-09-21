@@ -7,7 +7,8 @@ raw time-domain waveform, with hardware buttons and a serial console for control
 
 ## Features
 
-- **Two display modes**, swapped with the PAUSE button or `mode=` over serial:
+- **Two display modes**, swapped with the PAUSE button or `mode=` over serial. Each keeps its own
+  sample rate and target frame rate, so changing one mode's never affects the other's:
   - **Spectrum Analyser** — live FFT magnitude plot (linear or log frequency axis, dBFS or linear
     % full-scale amplitude axis, adjustable FFT length and bin aggregation, optional Hann window).
   - **Waveform Analyser** — raw time-domain trace ("scope" view), Y axis in real volts, X-axis
@@ -84,9 +85,10 @@ Connect at 115200 baud and type `help` for the full list. Highlights:
 | Command | Effect |
 |---|---|
 | `stats` | print current settings |
-| `fs=2000..200000` | set sample rate (Hz) |
+| `rawdump` | diagnostic: print raw I2S words from the ADC, before the sample pairing is reduced |
+| `fs=2000..200000` | set sample rate (Hz) for the current mode |
 | `n=32\|64\|128\|256\|512\|1024\|2048\|4096` | set FFT length |
-| `fps=10..120` | target frame rate |
+| `fps=10..120` | target frame rate for the current mode |
 | `agg=1..64` | bin aggregation |
 | `xscale=lin\|log` | frequency axis scale |
 | `yscale=db\|lin` | amplitude axis scale |

@@ -3,6 +3,7 @@
 #include "DSPUtils.h"
 #include "Settings.h"
 #include "Calibration.h"
+#include "AudioCapture.h"
 
 static char cmdBuf[96];
 static uint8_t cmdLen = 0;
@@ -16,7 +17,7 @@ void print_controls()
 {
   Serial.println();
   Serial.println(F("=== Controls (Buttons) ==="));
-  Serial.println(F("  PAUSE:         switch between FFT spectrum and waveform display"));
+  Serial.println(F("  PAUSE:         switch between FFT spectrum and waveform display (each keeps its own Fs and FPS)"));
   Serial.println(F("  AGG- / AGG+:   FFT: aggregation finer/coarser | Waveform: Y (amplitude) zoom"));
   Serial.println(F("  N- / N+:       FFT: length down/up | Waveform: no effect"));
   Serial.println(F("  ZOOM- / ZOOM+: FFT: horizontal zoom (Fmax -/+5%) | Waveform: X (time) zoom via Fs (-/+5%)"));
@@ -24,9 +25,10 @@ void print_controls()
   Serial.println(F("=== Serial Commands (with examples) ==="));
   Serial.println(F("  help                # show this help"));
   Serial.println(F("  stats               # print current settings"));
-  Serial.println(F("  fs=2000..200000     # set sample rate, e.g. fs=15000"));
+  Serial.println(F("  rawdump             # diagnostic: print raw I2S words from the ADC (play a steady tone first)"));
+  Serial.println(F("  fs=2000..200000     # set sample rate (current mode only), e.g. fs=15000"));
   Serial.println(F("  n=32|64|128|256|512|1024|2048|4096   # e.g. n=512"));
-  Serial.println(F("  fps=10..120         # e.g. fps=60"));
+  Serial.println(F("  fps=10..120         # target frame rate (current mode only), e.g. fps=60"));
   Serial.println(F("  agg=1..64           # e.g. agg=4 (coarser plot)"));
   Serial.println(F("  xscale=lin|log      # set X axis scale, e.g. xscale=lin"));
   Serial.println(F("  yscale=db|lin       # set Y axis scale (dBFS or linear %FS), e.g. yscale=lin"));
@@ -106,6 +108,10 @@ void apply_command(const char *s)
   else if (!strcmp(s, "stats"))
   {
     print_stats();
+  }
+  else if (!strcmp(s, "rawdump"))
+  {
+    capture_print_raw_dump();
   }
   else if (!strncmp(s, "fs=", 3))
   {

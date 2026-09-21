@@ -8,6 +8,8 @@ Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 // reads them - these are just fallbacks in case that were ever skipped.
 volatile uint32_t gFs = 40000;
 volatile uint16_t gFPS = 120;
+uint32_t gInactiveFs = 40000; // the waveform mode's, until first switched to
+uint16_t gInactiveFPS = 120;
 
 const uint16_t N_CHOICES[8] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
 volatile uint8_t gNidx = 5; // N=1024
@@ -52,6 +54,11 @@ volatile float gMeasuredFPS = 0.0f;
 volatile uint32_t gLastFFTus = 0;
 volatile uint32_t gLastFrameUs = 0;
 float gRefPow = 1.0f;
+
+uint32_t fft_mode_fs()
+{
+  return gDisplayMode == MODE_FFT ? gFs : gInactiveFs;
+}
 
 void alloc_fft_buffers()
 {

@@ -25,6 +25,10 @@
 // Reconfigures the I2S sample rate (Hz) for a running capture.
 void set_sample_rate(uint32_t fs);
 
+// Diagnostic for the serial "rawdump" command: prints a snapshot of raw I2S
+// words (before the drain task keeps one of each pair) with a short summary.
+void capture_print_raw_dump();
+
 // Sets up ADC1 + I2S/DMA capture and starts the drain task; call once from setup().
 void init_audio_capture();
 

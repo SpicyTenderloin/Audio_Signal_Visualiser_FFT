@@ -151,43 +151,43 @@ static inline void column_span(const int16_t *yArr, int i, int *outY0, int *outH
   *outH = hi - lo + 1;
 }
 
-// Draws the connected polyline described by yArr (one row per column) in a
-// single flat color - used to draw the new trace.
-static void draw_polyline(const int16_t *yArr, uint16_t color)
+// Moves the on-screen trace from last frame's rows (oldY, or nullptr if the
+// plot was just wiped and nothing is drawn) to this frame's (newY), one
+// column at a time. Per column, erasing last frame's span and drawing this
+// frame's span are folded into a single write over the union of the two:
+// rows inside the new span get the trace color, every other row gets its
+// true background (bg_at(), so gridline rows the old trace crossed come back
+// instead of staying punched out). That is one address window plus one pixel
+// burst per column - the per-call SPI setup, not pixel bandwidth, is what
+// dominates at this plot width. Columns whose span didn't change are skipped.
+static void update_polyline(const int16_t *oldY, const int16_t *newY)
 {
+  static uint16_t colBuf[PLOT_H]; // one column's union span; never taller than the plot
+
   for (int i = 0; i < PLOT_W; ++i)
   {
-    int y0, h;
-    column_span(yArr, i, &y0, &h);
-    tft.writeFastVLine(PLOT_X + i, y0, h, color);
-  }
-}
+    int n0, nh;
+    column_span(newY, i, &n0, &nh);
+    const int n1 = n0 + nh; // exclusive end of the new span
+    int lo = n0, hi = n1;   // union bounds, [lo, hi)
 
-// Erases the connected polyline described by yArr by restoring each pixel's
-// true background (s_rowBG) rather than flat COL_BG, so gridline rows the
-// old trace crossed come back instead of staying punched out. Runs of
-// identical background color are coalesced into one writeFastVLine call.
-static void erase_polyline(const int16_t *yArr)
-{
-  for (int i = 0; i < PLOT_W; ++i)
-  {
-    int x = PLOT_X + i;
-    int y0, h;
-    column_span(yArr, i, &y0, &h);
-
-    int runStart = y0;
-    uint16_t runColor = bg_at(i, runStart);
-    for (int r = y0 + 1; r < y0 + h; ++r)
+    if (oldY)
     {
-      uint16_t c = bg_at(i, r);
-      if (c != runColor)
-      {
-        tft.writeFastVLine(x, runStart, r - runStart, runColor);
-        runStart = r;
-        runColor = c;
-      }
+      int o0, oh;
+      column_span(oldY, i, &o0, &oh);
+      if (o0 == n0 && oh == nh)
+        continue; // identical span: already correct on screen
+      if (o0 < lo)
+        lo = o0;
+      if (o0 + oh > hi)
+        hi = o0 + oh;
     }
-    tft.writeFastVLine(x, runStart, (y0 + h) - runStart, runColor);
+
+    for (int r = lo; r < hi; ++r)
+      colBuf[r - lo] = (r >= n0 && r < n1) ? COL_LINE : bg_at(i, r);
+
+    tft.setAddrWindow(PLOT_X + i, lo, 1, hi - lo);
+    tft.writePixels(colBuf, hi - lo);
   }
 }
 
@@ -482,7 +482,7 @@ static void draw_yticks_waveform()
 
   for (int step = stepHi; step >= stepLo; --step)
   {
-    float v = step * minor; // volts
+    float v = step * minor;                             // volts
     float counts = adc_volts_to_counts(v) - (float)gDC; // back to centered counts, for the pixel row
     bool major_ = (step % 2 == 0);
     int y = y_from_amplitude((int16_t)roundf(counts));
@@ -533,7 +533,7 @@ static void draw_axis_unit_labels()
   int yx = (PLOT_X - yw) / 2;
   if (yx < 0)
     yx = 0;
-  tft.setCursor(yx, 7);
+  tft.setCursor(yx, 17);
   tft.print(yUnit);
 
   int labelY = BASE_Y + 10;
@@ -553,10 +553,8 @@ void draw_axes(uint16_t N)
   // a side-by-side mockup comparison against the built-in font). Centered
   // on its own real ink extents via getTextBounds - which works the same
   // way for a custom GFXfont as for the built-in one - within the headroom
-  // above the plot, rather than a band sized for the old built-in-font
-  // title: Aurora's glyphs are shorter, so centering on real bounds (instead
-  // of reusing the old font's fixed vertical offsets) is what let TOP
-  // shrink in Config.h without the title looking cramped.
+  // above the plot (TOP in Config.h), so the title stays centered in that
+  // band whatever height it's set to.
   const char *title = (gDisplayMode == MODE_FFT) ? "Spectrum Analyser" : "Waveform Analyser";
   tft.setFont(&aurora_247pt7b);
   int16_t bx, by;
@@ -767,10 +765,8 @@ void draw_line_spectrum(uint16_t N)
   }
 
   tft.startWrite(); // batch the plot only
-  if (s_prevLineValid)
-    erase_polyline(s_prevLineY); // restore true background (incl. gridlines) where the old trace was...
-  draw_polyline(yArr, COL_LINE); // ...instead of clearing the whole plot rect
-  tft.endWrite();                // end plot batch
+  update_polyline(s_prevLineValid ? s_prevLineY : nullptr, yArr);
+  tft.endWrite(); // end plot batch
 
   for (int i = 0; i < PLOT_W; ++i)
     s_prevLineY[i] = yArr[i];
@@ -787,9 +783,7 @@ void draw_waveform(const int16_t *samples)
     yArr[i] = (int16_t)y_from_amplitude(samples[i]);
 
   tft.startWrite();
-  if (s_prevLineValid)
-    erase_polyline(s_prevLineY);
-  draw_polyline(yArr, COL_LINE);
+  update_polyline(s_prevLineValid ? s_prevLineY : nullptr, yArr);
   tft.endWrite();
 
   for (int i = 0; i < PLOT_W; ++i)

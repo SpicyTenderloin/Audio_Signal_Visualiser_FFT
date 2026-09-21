@@ -8,8 +8,15 @@
 extern Adafruit_ILI9341 tft;
 
 // -------------------- Settings -----------------------
+// Sample rate and FPS target are per display mode, so tuning one mode never
+// moves the other's. gFs/gFPS always hold the ACTIVE mode's values - capture,
+// hop sizing and the axes all read them directly - while gInactiveFs/
+// gInactiveFPS park the values of the mode that isn't showing.
+// toggleDisplayMode() swaps the two pairs on every switch.
 extern volatile uint32_t gFs;  // Hz, sample rate (serial-adjustable)
 extern volatile uint16_t gFPS;
+extern uint32_t gInactiveFs;
+extern uint16_t gInactiveFPS;
 
 extern const uint16_t N_CHOICES[8];
 extern volatile uint8_t gNidx;         // index into N_CHOICES
@@ -46,6 +53,11 @@ enum DisplayMode
   MODE_WAVEFORM = 1 // time-domain raw waveform ("scope" view)
 };
 extern volatile DisplayMode gDisplayMode;
+
+// The spectrum mode's Fs whichever mode is showing (gFs while in spectrum
+// mode, the parked value otherwise). Spectrum-only settings like Fmax are
+// limited by this, not by whatever rate the waveform mode is using.
+uint32_t fft_mode_fs();
 
 // Waveform mode's Y-axis half-range, in centered ADC counts (i.e. the axis
 // spans -gWaveYRange..+gWaveYRange) - the time-domain analog of gYMax_dB/
