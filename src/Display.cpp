@@ -505,11 +505,17 @@ static void draw_axis_unit_labels()
   const char *xUnit = (gDisplayMode == MODE_FFT) ? "Hz" : "ms";
   tft.setTextColor(COL_TEXT, COL_BG);
 
+  // Sits in the title's own row band, not the plot's - anchoring it at
+  // PLOT_Y put it right on top of whatever tick happened to be at the very
+  // top of the axis (always true for the topmost gridline), clipping into
+  // it. The title text is centered across the full screen width and never
+  // reaches this narrow left margin, so sharing its vertical band here is
+  // free real estate, not a collision.
   int yw = (int)strlen(yUnit) * 6;
   int yx = (PLOT_X - yw) / 2;
   if (yx < 0)
     yx = 0;
-  tft.setCursor(yx, PLOT_Y);
+  tft.setCursor(yx, 4);
   tft.print(yUnit);
 
   int labelY = BASE_Y + 10;
