@@ -116,6 +116,11 @@ int visible_bin_count(uint16_t N)
 // (tested - looks visibly cleaner). Tuned to land on the 4096 tier.
 static const float FIDELITY_OVERSAMPLE_MARGIN = 4.0f;
 
+float min_alias_safe_fs(float fmaxHz)
+{
+  return 2.0f * FIDELITY_OVERSAMPLE_MARGIN * fmaxHz;
+}
+
 FsNRecommendation recommend_fs_n(float fmaxHz)
 {
   FsNRecommendation best{FS_MIN_HZ, N_CHOICES[0], 0};

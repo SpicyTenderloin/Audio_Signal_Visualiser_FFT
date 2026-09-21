@@ -116,28 +116,47 @@ static inline uint16_t bg_at(int i, int r)
   return COL_BG;
 }
 
+// Column i's full vertical span for the trace: its own sample plus half the
+// transition toward each neighbor (the midpoint between adjacent samples).
+// Adjacent columns' spans therefore meet exactly at that shared midpoint
+// with no gap, which is what a true sloped line between the two sample
+// points would look like anyway when it can only be 1px wide - but unlike
+// drawing that line directly, this stays one run per column (same cost as
+// the old "whole riser on the new column" approach, no extra SPI calls),
+// and reduces to a single point when a column has no vertical change.
+static inline void column_span(const int16_t *yArr, int i, int *outY0, int *outH)
+{
+  int y = yArr[i];
+  int lo = y, hi = y;
+  if (i > 0)
+  {
+    int leftMid = (yArr[i - 1] + y) / 2;
+    if (leftMid < lo)
+      lo = leftMid;
+    if (leftMid > hi)
+      hi = leftMid;
+  }
+  if (i < PLOT_W - 1)
+  {
+    int rightMid = (y + yArr[i + 1]) / 2;
+    if (rightMid < lo)
+      lo = rightMid;
+    if (rightMid > hi)
+      hi = rightMid;
+  }
+  *outY0 = lo;
+  *outH = hi - lo + 1;
+}
+
 // Draws the connected polyline described by yArr (one row per column) in a
 // single flat color - used to draw the new trace.
 static void draw_polyline(const int16_t *yArr, uint16_t color)
 {
-  bool havePrev = false;
-  int prevY = 0;
   for (int i = 0; i < PLOT_W; ++i)
   {
-    int y = yArr[i];
-    int x = PLOT_X + i;
-    if (havePrev)
-    {
-      int y0 = (y < prevY) ? y : prevY;
-      int h = abs(y - prevY) + 1;
-      tft.writeFastVLine(x, y0, h, color);
-    }
-    else
-    {
-      tft.writePixel(x, y, color);
-      havePrev = true;
-    }
-    prevY = y;
+    int y0, h;
+    column_span(yArr, i, &y0, &h);
+    tft.writeFastVLine(PLOT_X + i, y0, h, color);
   }
 }
 
@@ -147,14 +166,11 @@ static void draw_polyline(const int16_t *yArr, uint16_t color)
 // identical background color are coalesced into one writeFastVLine call.
 static void erase_polyline(const int16_t *yArr)
 {
-  bool havePrev = false;
-  int prevY = 0;
   for (int i = 0; i < PLOT_W; ++i)
   {
-    int y = yArr[i];
     int x = PLOT_X + i;
-    int y0 = havePrev ? ((y < prevY) ? y : prevY) : y;
-    int h = havePrev ? (abs(y - prevY) + 1) : 1;
+    int y0, h;
+    column_span(yArr, i, &y0, &h);
 
     int runStart = y0;
     uint16_t runColor = bg_at(i, runStart);
@@ -169,9 +185,6 @@ static void erase_polyline(const int16_t *yArr)
       }
     }
     tft.writeFastVLine(x, runStart, (y0 + h) - runStart, runColor);
-
-    havePrev = true;
-    prevY = y;
   }
 }
 
@@ -468,7 +481,7 @@ void draw_axes(uint16_t N)
   tft.fillScreen(COL_BG);
 
   // Title centered
-  const char *title = (gDisplayMode == MODE_FFT) ? "Audio Spectrum FFT" : "Audio Waveform";
+  const char *title = (gDisplayMode == MODE_FFT) ? "Spectrum" : "Waveform";
   int16_t bx, by;
   uint16_t tw, th;
   tft.setTextSize(2);

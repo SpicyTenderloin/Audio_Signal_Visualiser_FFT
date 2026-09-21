@@ -41,7 +41,23 @@ void setFs(uint32_t fs)
 void scaleFs(bool up, float pct)
 {
   float factor = up ? (1.0f + pct / 100.0f) : (1.0f - pct / 100.0f);
-  setFs((uint32_t)(gFs * factor));
+  float newFs = (float)gFs * factor;
+
+  // Zooming out (lower Fs = more time shown) can't be allowed to eat the
+  // anti-aliasing margin the way it did before we caught that bug - floor
+  // it at the same "Nyquist >= FIDELITY_OVERSAMPLE_MARGIN x fmax" limit
+  // recommend_fs_n() uses, so the minimum zoom still keeps real headroom
+  // above gFmaxHz instead of drifting into aliased territory. Zooming in
+  // (raising Fs) is never a safety concern, so it's left uncapped up to
+  // setFs()'s own FS_MAX_HZ ceiling.
+  if (!up)
+  {
+    float floor = fmaxf((float)FS_MIN_HZ, min_alias_safe_fs(gFmaxHz));
+    if (newFs < floor)
+      newFs = floor;
+  }
+
+  setFs((uint32_t)newFs);
 }
 
 void setYMax(float dB)

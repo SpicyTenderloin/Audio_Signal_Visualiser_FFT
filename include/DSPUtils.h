@@ -47,3 +47,9 @@ struct FsNRecommendation
 // bins just get averaged together for display anyway, so bins beyond it
 // buy nothing, and fewer bins under-use the available width.
 FsNRecommendation recommend_fs_n(float fmaxHz);
+
+// The lowest Fs that keeps Nyquist at least FIDELITY_OVERSAMPLE_MARGIN
+// times above fmaxHz - the same anti-aliasing margin recommend_fs_n() uses,
+// exposed standalone for callers (e.g. the waveform mode's zoom-out floor)
+// that just need the floor itself, not a full (Fs, N) recommendation.
+float min_alias_safe_fs(float fmaxHz);
