@@ -64,10 +64,32 @@ static inline int y_from_linear(float frac)
   return y;
 }
 
-// Last frame's per-column plot row, so draw_line_spectrum() can erase only
-// the pixels it actually touched instead of clearing the whole plot rect
-// every frame. Invalidated whenever the plot area gets wiped some other way
-// (a full draw_axes() redraw).
+// Maps a centered raw ADC sample to a plot row, against the waveform mode's
+// adjustable ±gWaveYRange span (the time-domain analog of y_from_db).
+static inline int y_from_amplitude(int16_t sample)
+{
+  float top = gWaveYRange;
+  float bot = -gWaveYRange;
+  float v = (float)sample;
+  if (v > top)
+    v = top;
+  if (v < bot)
+    v = bot;
+
+  float t = (top - v) / (top - bot);
+  int h = (int)roundf(t * (PLOT_H - 1));
+  int y = PLOT_Y + h;
+  if (y < PLOT_Y)
+    y = PLOT_Y;
+  if (y > BASE_Y)
+    y = BASE_Y;
+  return y;
+}
+
+// Last frame's per-column plot row, so draw_line_spectrum()/draw_waveform()
+// can erase only the pixels they actually touched instead of clearing the
+// whole plot rect every frame. Invalidated whenever the plot area gets
+// wiped some other way (a full draw_axes() redraw).
 static int16_t s_prevLineY[PLOT_W];
 static bool s_prevLineValid = false;
 
@@ -153,52 +175,80 @@ static void erase_polyline(const int16_t *yArr)
   }
 }
 
-void draw_axes(uint16_t N)
+// -------------------- X/Y tick drawing, per mode ----------------
+// Both populate s_colVGridColor/s_rowBG as they go, same as each other, so
+// the erase machinery above stays generic across modes.
+
+static void draw_xticks_fft()
 {
-  tft.fillScreen(COL_BG);
+  int labelY = BASE_Y + 10;
+  int maxLabelY = SCREEN_H - HUD_H - 2;
+  if (labelY > maxLabelY)
+    labelY = maxLabelY;
 
-  // Title centered
-  const char *title = "Audio Spectrum FFT";
-  int16_t bx, by;
-  uint16_t tw, th;
-  tft.setTextSize(2);
-  tft.getTextBounds(title, 0, 0, &bx, &by, &tw, &th);
-  int tx = (SCREEN_W - (int)tw) / 2;
-  int ty = PLOT_Y - 18;
-  tft.setCursor(tx, ty);
-  tft.setTextColor(COL_TITLE, COL_BG);
-  tft.print(title);
-  tft.setTextSize(1);
+  float nyq = (float)gFs * 0.5f;
+  float fmax_draw = fminf(gFmaxHz, nyq);
 
-  // Plot box
-  tft.drawFastHLine(PLOT_X, BASE_Y + 1, PLOT_W, COL_AX);
-  tft.drawFastVLine(PLOT_X - 1, PLOT_Y, PLOT_H, COL_AX);
-
-  for (int i = 0; i < PLOT_W; ++i)
-    s_colVGridColor[i] = COL_BG;
-
-  // X ticks, labels, and vertical gridlines (LIN or LOG)
-  auto draw_xticks = [&]()
+  if (gXScale == XS_LIN)
   {
-    int labelY = BASE_Y + 10;
-    int maxLabelY = SCREEN_H - HUD_H - 2;
-    if (labelY > maxLabelY)
-      labelY = maxLabelY;
+    float rough = fmax_draw / 6.0f;
+    float major = nice_step_125(rough);
+    float minor = major * 0.5f;
 
-    float nyq = (float)gFs * 0.5f;
-    float fmax_draw = fminf(gFmaxHz, nyq);
-
-    if (gXScale == XS_LIN)
+    for (float f = 0.0f; f <= fmax_draw + 0.01f * major; f += minor)
     {
-      float rough = fmax_draw / 6.0f;
-      float major = nice_step_125(rough);
-      float minor = major * 0.5f;
+      int x = PLOT_X + (int)roundf((f / fmax_draw) * (PLOT_W - 1));
+      bool isMajor = fabsf(fmodf(f + 1e-3f, major)) < (0.02f * major);
+      tft.drawFastVLine(x, BASE_Y + 1, isMajor ? 5 : 3, COL_AX);
 
-      for (float f = 0.0f; f <= fmax_draw + 0.01f * major; f += minor)
+      uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
+      tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
+      int col = x - PLOT_X;
+      if (col >= 0 && col < PLOT_W)
       {
-        int x = PLOT_X + (int)roundf((f / fmax_draw) * (PLOT_W - 1));
-        bool isMajor = fabsf(fmodf(f + 1e-3f, major)) < (0.02f * major);
-        tft.drawFastVLine(x, BASE_Y + 1, isMajor ? 5 : 3, COL_AX);
+        s_colVGridColor[col] = gridColor;
+      }
+    }
+    for (float f = 0.0f; f <= fmax_draw + 0.01f * major; f += major)
+    {
+      int x = PLOT_X + (int)roundf((f / fmax_draw) * (PLOT_W - 1));
+      char lab[12];
+      format_freq_label(lab, sizeof(lab), f);
+      int16_t lbx, lby;
+      uint16_t ltw, lth;
+      tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
+      int lx = x - (int)ltw / 2;
+      if (lx < PLOT_X)
+        lx = PLOT_X;
+      if (lx + (int)ltw > PLOT_X + PLOT_W)
+        lx = PLOT_X + PLOT_W - (int)ltw;
+      tft.setCursor(lx, labelY);
+      tft.setTextColor(COL_TEXT, COL_BG);
+      tft.print(lab);
+    }
+  }
+  else
+  {
+    float fmin = 10.0f;
+    float fmax = fmaxf(fmax_draw, fmin * 1.01f);
+    auto x_from_f = [&](float f) -> int
+    {
+      float t = logf(f / fmin) / logf(fmax / fmin);
+      t = (t < 0) ? 0 : ((t > 1) ? 1 : t);
+      return PLOT_X + (int)roundf(t * (PLOT_W - 1));
+    };
+    for (float decade = 10.0f; decade <= fmax * 1.001f; decade *= 10.0f)
+    {
+      const float mults[] = {1, 2, 3, 5};
+      for (int i = 0; i < 4; i++)
+      {
+        float f = decade * mults[i];
+        if (f < fmin || f > fmax)
+          continue;
+        int x = x_from_f(f);
+        bool isMajor = (mults[i] == 1);
+        int len = isMajor ? 5 : 3;
+        tft.drawFastVLine(x, BASE_Y + 1, len, COL_AX);
 
         uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
         tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
@@ -208,89 +258,38 @@ void draw_axes(uint16_t N)
           s_colVGridColor[col] = gridColor;
         }
       }
-      for (float f = 0.0f; f <= fmax_draw + 0.01f * major; f += major)
-      {
-        int x = PLOT_X + (int)roundf((f / fmax_draw) * (PLOT_W - 1));
-        char lab[12];
-        format_freq_label(lab, sizeof(lab), f);
-        int16_t lbx, lby;
-        uint16_t ltw, lth;
-        tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
-        int lx = x - (int)ltw / 2;
-        if (lx < PLOT_X)
-          lx = PLOT_X;
-        if (lx + (int)ltw > PLOT_X + PLOT_W)
-          lx = PLOT_X + PLOT_W - (int)ltw;
-        tft.setCursor(lx, labelY);
-        tft.setTextColor(COL_TEXT, COL_BG);
-        tft.print(lab);
-      }
     }
-    else
+    struct Lab
     {
-      float fmin = 10.0f;
-      float fmax = fmaxf(fmax_draw, fmin * 1.01f);
-      auto x_from_f = [&](float f) -> int
-      {
-        float t = logf(f / fmin) / logf(fmax / fmin);
-        t = (t < 0) ? 0 : ((t > 1) ? 1 : t);
-        return PLOT_X + (int)roundf(t * (PLOT_W - 1));
-      };
-      for (float decade = 10.0f; decade <= fmax * 1.001f; decade *= 10.0f)
-      {
-        const float mults[] = {1, 2, 3, 5};
-        for (int i = 0; i < 4; i++)
-        {
-          float f = decade * mults[i];
-          if (f < fmin || f > fmax)
-            continue;
-          int x = x_from_f(f);
-          bool isMajor = (mults[i] == 1);
-          int len = isMajor ? 5 : 3;
-          tft.drawFastVLine(x, BASE_Y + 1, len, COL_AX);
-
-          uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
-          tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
-          int col = x - PLOT_X;
-          if (col >= 0 && col < PLOT_W)
-          {
-            s_colVGridColor[col] = gridColor;
-          }
-        }
-      }
-      struct Lab
-      {
-        float f;
-        const char *s;
-      };
-      Lab labs[] = {{10, "10"}, {100, "100"}, {1000, "1k"}, {2000, "2k"}, {5000, "5k"}};
-      for (auto &L : labs)
-      {
-        if (L.f > fmax)
-          continue;
-        int x = x_from_f(L.f);
-        int16_t lbx, lby;
-        uint16_t ltw, lth;
-        tft.getTextBounds(L.s, 0, 0, &lbx, &lby, &ltw, &lth);
-        int lx = x - (int)ltw / 2;
-        if (lx < PLOT_X)
-          lx = PLOT_X;
-        if (lx + (int)ltw > PLOT_X + PLOT_W)
-          lx = PLOT_X + PLOT_W - (int)ltw;
-        tft.setCursor(lx, labelY);
-        tft.setTextColor(COL_TEXT, COL_BG);
-        tft.print(L.s);
-      }
+      float f;
+      const char *s;
+    };
+    Lab labs[] = {{10, "10"}, {100, "100"}, {1000, "1k"}, {2000, "2k"}, {5000, "5k"}};
+    for (auto &L : labs)
+    {
+      if (L.f > fmax)
+        continue;
+      int x = x_from_f(L.f);
+      int16_t lbx, lby;
+      uint16_t ltw, lth;
+      tft.getTextBounds(L.s, 0, 0, &lbx, &lby, &ltw, &lth);
+      int lx = x - (int)ltw / 2;
+      if (lx < PLOT_X)
+        lx = PLOT_X;
+      if (lx + (int)ltw > PLOT_X + PLOT_W)
+        lx = PLOT_X + PLOT_W - (int)ltw;
+      tft.setCursor(lx, labelY);
+      tft.setTextColor(COL_TEXT, COL_BG);
+      tft.print(L.s);
     }
-  };
-  draw_xticks();
+  }
+}
 
-  // Y ticks. The topmost major tick's label carries the unit suffix (dB or
-  // %, for full-scale amplitude), so the axis is self-labeling without
-  // needing separate room for a unit caption.
-  for (int r = 0; r < PLOT_H; ++r)
-    s_rowBG[r] = COL_BG;
-
+// Y ticks. The topmost major tick's label carries the unit suffix (dB or
+// %, for full-scale amplitude), so the axis is self-labeling without
+// needing separate room for a unit caption.
+static void draw_yticks_fft()
+{
   if (gYScale == YS_DB)
   {
     float top = gYMax_dB, bot = gYMin_dB;
@@ -368,18 +367,151 @@ void draw_axes(uint16_t N)
       }
     }
   }
+}
+
+// X ticks for the waveform view: time across the plot width (0..span),
+// where span = PLOT_W samples at the current Fs. Structurally the same as
+// the FFT view's linear frequency ticks, just in time instead of Hz.
+static void draw_xticks_waveform()
+{
+  int labelY = BASE_Y + 10;
+  int maxLabelY = SCREEN_H - HUD_H - 2;
+  if (labelY > maxLabelY)
+    labelY = maxLabelY;
+
+  float spanMs = (float)PLOT_W / (float)gFs * 1000.0f;
+  float rough = spanMs / 6.0f;
+  float major = nice_step_125(rough);
+  float minor = major * 0.5f;
+  bool firstMajor = true;
+
+  for (float t = 0.0f; t <= spanMs + 0.01f * major; t += minor)
+  {
+    int x = PLOT_X + (int)roundf((t / spanMs) * (PLOT_W - 1));
+    bool isMajor = fabsf(fmodf(t + 1e-3f, major)) < (0.02f * major);
+    tft.drawFastVLine(x, BASE_Y + 1, isMajor ? 5 : 3, COL_AX);
+
+    uint16_t gridColor = isMajor ? COL_GRID : COL_GRID_MINOR;
+    tft.drawFastVLine(x, PLOT_Y, PLOT_H, gridColor);
+    int col = x - PLOT_X;
+    if (col >= 0 && col < PLOT_W)
+    {
+      s_colVGridColor[col] = gridColor;
+    }
+  }
+  for (float t = 0.0f; t <= spanMs + 0.01f * major; t += major)
+  {
+    int x = PLOT_X + (int)roundf((t / spanMs) * (PLOT_W - 1));
+    char num[12];
+    format_time_label(num, sizeof(num), t);
+    char lab[16];
+    snprintf(lab, sizeof(lab), firstMajor ? "%sms" : "%s", num);
+    firstMajor = false;
+    int16_t lbx, lby;
+    uint16_t ltw, lth;
+    tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
+    int lx = x - (int)ltw / 2;
+    if (lx < PLOT_X)
+      lx = PLOT_X;
+    if (lx + (int)ltw > PLOT_X + PLOT_W)
+      lx = PLOT_X + PLOT_W - (int)ltw;
+    tft.setCursor(lx, labelY);
+    tft.setTextColor(COL_TEXT, COL_BG);
+    tft.print(lab);
+  }
+}
+
+// Y ticks for the waveform view: centered amplitude, ±gWaveYRange raw ADC
+// counts. Steps by integer multiples of `minor` (rather than the FFT Y
+// axis's fmodf-based major/minor test) so it stays exact on both sides of
+// zero - fmodf's sign behavior on negative values would otherwise misjudge
+// which ticks are major below the centerline.
+static void draw_yticks_waveform()
+{
+  float range = gWaveYRange;
+  float rough = range / 3.0f;
+  float major = nice_step_125(rough);
+  float minor = major * 0.5f; // always exactly major/2, so "every 2nd step" below is exact
+
+  int maxStep = (int)floorf(range / minor);
+
+  for (int step = maxStep; step >= -maxStep; --step)
+  {
+    float v = step * minor;
+    bool major_ = (step % 2 == 0);
+    int y = y_from_amplitude((int16_t)roundf(v));
+
+    if (major_)
+      tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID);
+    else
+      tft.drawFastHLine(PLOT_X, y, PLOT_W, COL_GRID_MINOR);
+    s_rowBG[y - PLOT_Y] = major_ ? COL_GRID : COL_GRID_MINOR;
+
+    int tickLen = major_ ? 6 : 3;
+    tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
+
+    if (major_)
+    {
+      // No unit suffix here (unlike dB/% in FFT mode) - "counts" isn't
+      // worth the extra label width, and the HUD/title give enough context.
+      char lab[12];
+      snprintf(lab, sizeof(lab), "%d", (int)roundf(v));
+      tft.setCursor(PLOT_X - 28, y - 3);
+      tft.setTextColor(COL_TEXT, COL_BG);
+      tft.print(lab);
+    }
+  }
+}
+
+void draw_axes(uint16_t N)
+{
+  tft.fillScreen(COL_BG);
+
+  // Title centered
+  const char *title = (gDisplayMode == MODE_FFT) ? "Audio Spectrum FFT" : "Audio Waveform";
+  int16_t bx, by;
+  uint16_t tw, th;
+  tft.setTextSize(2);
+  tft.getTextBounds(title, 0, 0, &bx, &by, &tw, &th);
+  int tx = (SCREEN_W - (int)tw) / 2;
+  int ty = PLOT_Y - 18;
+  tft.setCursor(tx, ty);
+  tft.setTextColor(COL_TITLE, COL_BG);
+  tft.print(title);
+  tft.setTextSize(1);
+
+  // Plot box
+  tft.drawFastHLine(PLOT_X, BASE_Y + 1, PLOT_W, COL_AX);
+  tft.drawFastVLine(PLOT_X - 1, PLOT_Y, PLOT_H, COL_AX);
+
+  for (int i = 0; i < PLOT_W; ++i)
+    s_colVGridColor[i] = COL_BG;
+  for (int r = 0; r < PLOT_H; ++r)
+    s_rowBG[r] = COL_BG;
+
+  if (gDisplayMode == MODE_FFT)
+  {
+    draw_xticks_fft();
+    draw_yticks_fft();
+  }
+  else
+  {
+    draw_xticks_waveform();
+    draw_yticks_waveform();
+  }
 
   s_prevLineValid = false; // whole screen just got wiped, nothing to erase next frame
   gAxesDirty = false;
   gHUDDirty = true;
 }
 
-// The HUD is a row of evenly-spaced fields, centered as a whole. The FPS
-// value is a fixed-width slot (HUD_FPS_VAL_CHARS digits) within the last
-// field, so its position stays put and draw_hud_fps() can redraw just those
-// digits once/sec without recomputing (or flickering) the rest of the row.
-// The default GFX font advances a fixed HUD_CHAR_W px/char at text size 1,
-// so field widths can be computed from string length alone.
+// The HUD is a row of evenly-spaced fields, centered as a whole - the field
+// set depends on gDisplayMode. The FPS value is a fixed-width slot
+// (HUD_FPS_VAL_CHARS digits) within the last field, so its position stays
+// put and draw_hud_fps() can redraw just those digits once/sec without
+// recomputing (or flickering) the rest of the row. The default GFX font
+// advances a fixed HUD_CHAR_W px/char at text size 1, so field widths can
+// be computed from string length alone.
 static const int HUD_TEXT_Y = SCREEN_H - HUD_H + (HUD_H - 8) / 2;
 static const int HUD_CHAR_W = 6;
 static const int HUD_GAP = 10; // even spacing between fields
@@ -387,47 +519,63 @@ static const int HUD_FPS_VAL_CHARS = 3;
 
 static int s_hudFpsValX = 0; // set by draw_hud(), reused by draw_hud_fps()
 
-void draw_hud(uint16_t N, float df_eff)
+void draw_hud()
 {
   tft.fillRect(0, SCREEN_H - HUD_H, SCREEN_W, HUD_H, COL_BG);
 
-  char f0[24], f1[16], f2[20], f3[12];
-  snprintf(f0, sizeof(f0), "Fs=%.1fkHz", (double)gFs / 1000.0);
-  snprintf(f1, sizeof(f1), "N=%u", N);
-  snprintf(f2, sizeof(f2), "Df=%.1fHz", df_eff);
-  snprintf(f3, sizeof(f3), "Hann=%s", gUseHann ? "ON" : "OFF");
-  static const char *f4 = "FPS:";
+  char f0[24], f1[20], f2[20], f3[12];
+  const char *fields[4];
+  int fieldCount;
 
-  int w0 = (int)strlen(f0) * HUD_CHAR_W;
-  int w1 = (int)strlen(f1) * HUD_CHAR_W;
-  int w2 = (int)strlen(f2) * HUD_CHAR_W;
-  int w3 = (int)strlen(f3) * HUD_CHAR_W;
-  int w4 = (int)strlen(f4) * HUD_CHAR_W;
-  int wVal = HUD_FPS_VAL_CHARS * HUD_CHAR_W;
+  if (gDisplayMode == MODE_FFT)
+  {
+    uint16_t N = N_CHOICES[gNidx];
+    float df = (float)gFs / (float)N;
+    float df_eff = df * (float)bins_per_point(N);
 
-  int total = w0 + w1 + w2 + w3 + (w4 + wVal) + HUD_GAP * 4;
+    snprintf(f0, sizeof(f0), "Fs=%.1fkHz", (double)gFs / 1000.0);
+    snprintf(f1, sizeof(f1), "N=%u", N);
+    snprintf(f2, sizeof(f2), "Df=%.1fHz", (double)df_eff);
+    snprintf(f3, sizeof(f3), "Hann=%s", gUseHann ? "ON" : "OFF");
+    fields[0] = f0;
+    fields[1] = f1;
+    fields[2] = f2;
+    fields[3] = f3;
+    fieldCount = 4;
+  }
+  else // MODE_WAVEFORM
+  {
+    float spanMs = (float)PLOT_W / (float)gFs * 1000.0f;
+    snprintf(f0, sizeof(f0), "Fs=%.1fkHz", (double)gFs / 1000.0);
+    snprintf(f1, sizeof(f1), "Span=%.1fms", (double)spanMs);
+    fields[0] = f0;
+    fields[1] = f1;
+    fieldCount = 2;
+  }
+
+  static const char *fpsLabel = "FPS:";
+  int fieldsW = 0;
+  for (int i = 0; i < fieldCount; i++)
+    fieldsW += (int)strlen(fields[i]) * HUD_CHAR_W;
+  int wFpsLabel = (int)strlen(fpsLabel) * HUD_CHAR_W;
+  int wFpsVal = HUD_FPS_VAL_CHARS * HUD_CHAR_W;
+
+  int total = fieldsW + wFpsLabel + wFpsVal + HUD_GAP * fieldCount;
   int x = (SCREEN_W - total) / 2;
   if (x < 0)
     x = 0;
 
   tft.setTextSize(1);
   tft.setTextColor(COL_TEXT, COL_BG);
-
+  for (int i = 0; i < fieldCount; i++)
+  {
+    tft.setCursor(x, HUD_TEXT_Y);
+    tft.print(fields[i]);
+    x += (int)strlen(fields[i]) * HUD_CHAR_W + HUD_GAP;
+  }
   tft.setCursor(x, HUD_TEXT_Y);
-  tft.print(f0);
-  x += w0 + HUD_GAP;
-  tft.setCursor(x, HUD_TEXT_Y);
-  tft.print(f1);
-  x += w1 + HUD_GAP;
-  tft.setCursor(x, HUD_TEXT_Y);
-  tft.print(f2);
-  x += w2 + HUD_GAP;
-  tft.setCursor(x, HUD_TEXT_Y);
-  tft.print(f3);
-  x += w3 + HUD_GAP;
-  tft.setCursor(x, HUD_TEXT_Y);
-  tft.print(f4);
-  x += w4;
+  tft.print(fpsLabel);
+  x += wFpsLabel;
   s_hudFpsValX = x; // value slot immediately follows the "FPS:" label
 
   gHUDDirty = false;
@@ -470,7 +618,6 @@ void draw_line_spectrum(uint16_t N)
 
   const int Kvis = visible_bin_count(N);
   const int bpp = bins_per_point(N);
-  const float df_eff = df * (float)bpp;
 
   // Loop-invariant for the log-scale branch below (doesn't depend on the
   // per-column i), hoisted out so it's computed once per frame rather than
@@ -529,16 +676,34 @@ void draw_line_spectrum(uint16_t N)
 
   tft.startWrite(); // batch the plot only
   if (s_prevLineValid)
-    erase_polyline(s_prevLineY);   // restore true background (incl. gridlines) where the old trace was...
-  draw_polyline(yArr, COL_LINE);   // ...instead of clearing the whole plot rect
-  tft.endWrite();                  // end plot batch
+    erase_polyline(s_prevLineY); // restore true background (incl. gridlines) where the old trace was...
+  draw_polyline(yArr, COL_LINE); // ...instead of clearing the whole plot rect
+  tft.endWrite();                // end plot batch
 
   for (int i = 0; i < PLOT_W; ++i)
     s_prevLineY[i] = yArr[i];
   s_prevLineValid = true;
 
   if (gHUDDirty)
-  {
-    draw_hud(N, df_eff);
-  }
+    draw_hud();
+}
+
+void draw_waveform(const int16_t *samples)
+{
+  int16_t yArr[PLOT_W];
+  for (int i = 0; i < PLOT_W; ++i)
+    yArr[i] = (int16_t)y_from_amplitude(samples[i]);
+
+  tft.startWrite();
+  if (s_prevLineValid)
+    erase_polyline(s_prevLineY);
+  draw_polyline(yArr, COL_LINE);
+  tft.endWrite();
+
+  for (int i = 0; i < PLOT_W; ++i)
+    s_prevLineY[i] = yArr[i];
+  s_prevLineValid = true;
+
+  if (gHUDDirty)
+    draw_hud();
 }

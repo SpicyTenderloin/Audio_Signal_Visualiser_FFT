@@ -39,6 +39,19 @@ extern bool gUseHann;
 extern bool gPaused;
 extern volatile float gWindowGain; // coherent gain (mean) of window_buf for the current N; 1.0 when gUseHann is off
 
+// -------------------- Display mode -----------------------
+enum DisplayMode
+{
+  MODE_FFT = 0,     // frequency-domain spectrum (the default)
+  MODE_WAVEFORM = 1 // time-domain raw waveform ("scope" view)
+};
+extern volatile DisplayMode gDisplayMode;
+
+// Waveform mode's Y-axis half-range, in centered ADC counts (i.e. the axis
+// spans -gWaveYRange..+gWaveYRange) - the time-domain analog of gYMax_dB/
+// gYMin_dB, adjustable the same way Fmax is.
+extern volatile float gWaveYRange;
+
 // -------------------- FFT / sample buffers -----------
 // Heap-allocated (not fixed-size static arrays) so FFT_MAX can be sized
 // well beyond what the linker's static DRAM segment alone can fit -

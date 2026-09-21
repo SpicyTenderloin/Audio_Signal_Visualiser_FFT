@@ -13,6 +13,11 @@ void scaleFmax(bool up, float pct = 5.0f);
 // -------------------- Sample rate setter -----------
 // Sets the ADC sample rate, reprograms the capture timer, and re-clamps Fmax.
 void setFs(uint32_t fs);
+// Zooms Fs in/out by `pct` percent - the waveform mode's time-axis zoom.
+// The plot always shows PLOT_W raw samples, so a higher Fs means each of
+// those samples spans less real time: "zoom in" (up=true) means less time
+// shown, more detail; "zoom out" means more time shown, less detail.
+void scaleFs(bool up, float pct = 5.0f);
 
 // -------------------- Y range setters ---------------
 // Sets the top of the Y (dBFS) axis, keeping at least a 10dB span.
@@ -33,3 +38,9 @@ void setXScale(uint8_t m);
 void setYScale(uint8_t m);
 // Turns the Hann window on/off.
 void setHann(bool on);
+
+// -------------------- Display mode -----------------
+// Switches between the FFT spectrum and raw-waveform display modes.
+void toggleDisplayMode();
+// Zooms the waveform mode's Y (amplitude) axis in/out by `pct` percent.
+void scaleWaveYRange(bool up, float pct = 5.0f);

@@ -10,10 +10,10 @@ void print_controls()
 {
   Serial.println();
   Serial.println(F("=== Controls (Buttons) ==="));
-  Serial.println(F("  PAUSE: toggle Play/Pause"));
-  Serial.println(F("  AGG- / AGG+:   aggregation finer/coarser"));
-  Serial.println(F("  N- / N+:       FFT length down/up"));
-  Serial.println(F("  ZOOM- / ZOOM+: Horizontal zoom (Fmax -/+ 5%)"));
+  Serial.println(F("  PAUSE:         switch between FFT spectrum and waveform display"));
+  Serial.println(F("  AGG- / AGG+:   FFT: aggregation finer/coarser | Waveform: Y (amplitude) zoom"));
+  Serial.println(F("  N- / N+:       FFT: length down/up | Waveform: no effect"));
+  Serial.println(F("  ZOOM- / ZOOM+: FFT: horizontal zoom (Fmax -/+5%) | Waveform: X (time) zoom via Fs (-/+5%)"));
   Serial.println();
   Serial.println(F("=== Serial Commands (with examples) ==="));
   Serial.println(F("  help                # show this help"));
@@ -30,23 +30,35 @@ void print_controls()
   Serial.println(F("  ymax=<dB>           # set top of Y axis in dBFS, e.g. ymax=-10"));
   Serial.println(F("  ymin=<dB>           # set bottom of Y axis in dBFS, e.g. ymin=-80"));
   Serial.println(F("  hann=0|1            # Hann window off/on, e.g. hann=1"));
+  Serial.println(F("  mode=fft|wave       # switch display mode, e.g. mode=wave"));
   Serial.println(F("  pause               # toggle pause"));
   Serial.println();
 }
 
 void print_stats()
 {
-  uint16_t N = N_CHOICES[gNidx];
-  int bpp = bins_per_point(N);
-  float df_eff = (float)gFs / N * bpp;
-  int hop = clampi((int)(gFs / gFPS), 1, N);
-  float overlapPct = 100.0f * (1.0f - (float)hop / (float)N);
-  Serial.printf("Fs=%lu  N=%u  Df=%.2fHz  FPS(target)=%u  BPP=%d  Overlap=%.0f%%  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
-                (unsigned long)gFs, N, df_eff, gFPS, bpp, overlapPct, (gXScale == XS_LIN ? "LIN" : "LOG"),
-                (gYScale == YS_DB ? "dB" : "LIN"), gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
-  Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
-  Serial.printf("FPS(actual)=%.1f  Frame=%.2fms  FFT=%.2fms\r\n",
-                (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0);
+  if (gDisplayMode == MODE_FFT)
+  {
+    uint16_t N = N_CHOICES[gNidx];
+    int bpp = bins_per_point(N);
+    float df_eff = (float)gFs / N * bpp;
+    int hop = clampi((int)(gFs / gFPS), 1, N);
+    float overlapPct = 100.0f * (1.0f - (float)hop / (float)N);
+    Serial.printf("Mode=FFT  Fs=%lu  N=%u  Df=%.2fHz  FPS(target)=%u  BPP=%d  Overlap=%.0f%%  X=%s  Y=%s  Fmax=%.0fHz%s  Hann=%d\r\n",
+                  (unsigned long)gFs, N, df_eff, gFPS, bpp, overlapPct, (gXScale == XS_LIN ? "LIN" : "LOG"),
+                  (gYScale == YS_DB ? "dB" : "LIN"), gFmaxHz, gFmaxFollowNyq ? " (nyq)" : "", (int)gUseHann);
+    Serial.printf("Y range: [%.1f, %.1f] dBFS\r\n", gYMin_dB, gYMax_dB);
+    Serial.printf("FPS(actual)=%.1f  Frame=%.2fms  FFT=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0, (double)gLastFFTus / 1000.0);
+  }
+  else // MODE_WAVEFORM
+  {
+    float spanMs = (float)PLOT_W / (float)gFs * 1000.0f;
+    Serial.printf("Mode=Waveform  Fs=%lu  Span=%.2fms (%d samples)  FPS(target)=%u  Y range: +/-%.0f counts\r\n",
+                  (unsigned long)gFs, (double)spanMs, PLOT_W, gFPS, (double)gWaveYRange);
+    Serial.printf("FPS(actual)=%.1f  Frame=%.2fms\r\n",
+                  (double)gMeasuredFPS, (double)gLastFrameUs / 1000.0);
+  }
 }
 
 // Suggests the fs=/n= combo whose visible bin count (0..fmaxHz) best fills
@@ -129,6 +141,13 @@ void apply_command(const char *s)
   else if (!strncmp(s, "hann=", 5))
   {
     setHann(atoi(s + 5) != 0);
+  }
+  else if (!strncmp(s, "mode=", 5))
+  {
+    if (!strcasecmp(s + 5, "fft") && gDisplayMode != MODE_FFT)
+      toggleDisplayMode();
+    else if (!strcasecmp(s + 5, "wave") && gDisplayMode != MODE_WAVEFORM)
+      toggleDisplayMode();
   }
   else if (!strcmp(s, "pause"))
   {

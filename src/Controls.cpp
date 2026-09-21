@@ -33,24 +33,56 @@ void init_controls()
 
 void pollButtons()
 {
-  if (pressedEdge(bPause))
-    gPaused = !gPaused;
+  // Every button gets polled every cycle regardless of mode, so debounce
+  // state (and edge detection) stays correct even for buttons that are
+  // inert in the current mode - only which *action* runs off each edge
+  // depends on gDisplayMode.
+  bool pause = pressedEdge(bPause);
+  bool aggDn = pressedEdge(bAggDn);
+  bool aggUp = pressedEdge(bAggUp);
+  bool nDn = pressedEdge(bNDn);
+  bool nUp = pressedEdge(bNUp);
+  bool zoomDn = pressedEdge(bZoomDn);
+  bool zoomUp = pressedEdge(bZoomUp);
 
-  // Aggregation
-  if (pressedEdge(bAggDn))
-    setAgg(gAgg > 1 ? gAgg - 1 : 1);
-  if (pressedEdge(bAggUp))
-    setAgg(gAgg + 1);
+  // Mode switch - works the same regardless of which mode is active.
+  if (pause)
+    toggleDisplayMode();
 
-  // N
-  if (pressedEdge(bNDn))
-    setNidx(gNidx > 0 ? gNidx - 1 : 0);
-  if (pressedEdge(bNUp))
-    setNidx(gNidx + 1);
+  if (gDisplayMode == MODE_FFT)
+  {
+    // Aggregation
+    if (aggDn)
+      setAgg(gAgg > 1 ? gAgg - 1 : 1);
+    if (aggUp)
+      setAgg(gAgg + 1);
 
-  // Horizontal zoom via Fmax (±5%)
-  if (pressedEdge(bZoomDn))
-    scaleFmax(false, 5.0f); // zoom out
-  if (pressedEdge(bZoomUp))
-    scaleFmax(true, 5.0f); // zoom in
+    // N
+    if (nDn)
+      setNidx(gNidx > 0 ? gNidx - 1 : 0);
+    if (nUp)
+      setNidx(gNidx + 1);
+
+    // Horizontal zoom via Fmax (±5%)
+    if (zoomDn)
+      scaleFmax(false, 5.0f); // zoom out
+    if (zoomUp)
+      scaleFmax(true, 5.0f); // zoom in
+  }
+  else // MODE_WAVEFORM
+  {
+    // Y (amplitude) zoom. N has no meaning here - the plot always shows
+    // exactly one raw sample per pixel column - so nDn/nUp are read
+    // above (to keep their debounce state correct) but never acted on.
+    if (aggDn)
+      scaleWaveYRange(false, 5.0f); // zoom out
+    if (aggUp)
+      scaleWaveYRange(true, 5.0f); // zoom in
+
+    // X (time) zoom, via Fs (±5%)
+    if (zoomDn)
+      scaleFs(false, 5.0f); // zoom out: more time shown, less detail
+    if (zoomUp)
+      scaleFs(true, 5.0f); // zoom in: less time shown, more detail
+  }
 }

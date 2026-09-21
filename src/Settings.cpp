@@ -38,6 +38,12 @@ void setFs(uint32_t fs)
   gHUDDirty = true;
 }
 
+void scaleFs(bool up, float pct)
+{
+  float factor = up ? (1.0f + pct / 100.0f) : (1.0f - pct / 100.0f);
+  setFs((uint32_t)(gFs * factor));
+}
+
 void setYMax(float dB)
 {
   if (dB > 20.0f)
@@ -109,4 +115,23 @@ void setHann(bool on)
   gUseHann = on;
   gAxesDirty = true;
   gHUDDirty = true;
+}
+
+void toggleDisplayMode()
+{
+  gDisplayMode = (gDisplayMode == MODE_FFT) ? MODE_WAVEFORM : MODE_FFT;
+  gAxesDirty = true; // the two modes' axes are entirely different
+  gHUDDirty = true;  // ...and so is the HUD's field set
+}
+
+void scaleWaveYRange(bool up, float pct)
+{
+  float factor = up ? (1.0f - pct / 100.0f) : (1.0f + pct / 100.0f); // up = zoom in = smaller range
+  float v = gWaveYRange * factor;
+  if (v < 16.0f)
+    v = 16.0f;
+  if (v > 2048.0f)
+    v = 2048.0f;
+  gWaveYRange = v;
+  gAxesDirty = true;
 }

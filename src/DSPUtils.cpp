@@ -58,6 +58,17 @@ void format_freq_label(char *out, size_t n, float fHz)
   }
 }
 
+void format_time_label(char *out, size_t n, float ms)
+{
+  float a = fabsf(ms);
+  if (a < 10.0f)
+    snprintf(out, n, "%.2f", (double)ms);
+  else if (a < 100.0f)
+    snprintf(out, n, "%.1f", (double)ms);
+  else
+    snprintf(out, n, "%.0f", (double)ms);
+}
+
 int bins_per_point(uint16_t N)
 {
   int Kvis = visible_bin_count(N);

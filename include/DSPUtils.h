@@ -16,6 +16,9 @@ void make_window_for_N(uint16_t N);
 float nice_step_125(float rough);
 // Formats a frequency in Hz as "123" or "1.2k" style text for axis labels.
 void format_freq_label(char *out, size_t n, float fHz);
+// Formats a time in milliseconds as plain digits (unit-free - callers add
+// "ms") with precision scaled to magnitude, for axis labels.
+void format_time_label(char *out, size_t n, float ms);
 
 // -------------------- Plot bin aggregation ------------------
 // Number of FFT bins averaged together per horizontal pixel, given N.

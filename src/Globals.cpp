@@ -25,6 +25,9 @@ bool gUseHann = true;
 bool gPaused = false;
 volatile float gWindowGain = 1.0f; // recomputed by make_window_for_N()
 
+volatile DisplayMode gDisplayMode = MODE_FFT;
+volatile float gWaveYRange = 2048.0f; // full ADC half-range by default
+
 float *fft_buf = nullptr;
 float *window_buf = nullptr;
 
