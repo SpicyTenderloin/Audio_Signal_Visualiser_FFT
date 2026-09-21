@@ -1,6 +1,7 @@
 #include "Display.h"
 #include "Globals.h"
 #include "DSPUtils.h"
+#include "Aurora7pt7b.h"
 #include <math.h>
 #include <limits.h>
 #include <string.h>
@@ -192,14 +193,6 @@ static void erase_polyline(const int16_t *yArr)
 // Both populate s_colVGridColor/s_rowBG as they go, same as each other, so
 // the erase machinery above stays generic across modes.
 
-// Row reserved for the Y-axis unit caption (see draw_axis_unit_labels()):
-// whichever major Y-tick would land nearest the plot's vertical center has
-// its text suppressed below (gridline and tick stub still draw as normal),
-// freeing a collision-free row for the caption in an otherwise fully-used
-// left margin.
-static const int AXIS_UNIT_ROW_Y = PLOT_Y + PLOT_H / 2;
-static inline bool is_axis_unit_row(int y) { return abs(y - AXIS_UNIT_ROW_Y) <= 5; }
-
 static void draw_xticks_fft()
 {
   int labelY = BASE_Y + 10;
@@ -362,7 +355,7 @@ static void draw_yticks_fft()
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-      if (major && !is_axis_unit_row(y))
+      if (major)
       {
         char lab[12];
         snprintf(lab, sizeof(lab), "%d", d);
@@ -389,7 +382,7 @@ static void draw_yticks_fft()
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-      if (major && !is_axis_unit_row(y))
+      if (major)
       {
         char lab[12];
         snprintf(lab, sizeof(lab), "%d", pct);
@@ -487,7 +480,7 @@ static void draw_yticks_waveform()
     int tickLen = major_ ? 6 : 3;
     tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-    if (major_ && !is_axis_unit_row(y))
+    if (major_)
     {
       char lab[12];
       format_volts_label(lab, sizeof(lab), v, major);
@@ -498,10 +491,11 @@ static void draw_yticks_waveform()
 
 // Unit captions for each axis, placed in the plot's own margins rather than
 // the title row (crowded, and unrelated to the title itself):
-//   - Y-axis unit: horizontally centered in the left margin, on the row
-//     draw_yticks_*() left clear via is_axis_unit_row() - so it reads as
-//     "this whole column of numbers is volts/dB/%" without overlapping any
-//     of them.
+//   - Y-axis unit: horizontally centered in the left margin, anchored near
+//     the top of the plot - horizontal centering only, not vertical; it
+//     doesn't try to dodge or replace whichever tick label happens to be
+//     nearby, unlike an earlier version that suppressed the tick nearest
+//     plot-center to make room for it.
 //   - X-axis unit: right margin, same row as the X tick labels - those are
 //     kept clear of this strip by the PLOT_X+PLOT_W clamp in
 //     draw_xticks_fft()/draw_xticks_waveform().
@@ -515,7 +509,7 @@ static void draw_axis_unit_labels()
   int yx = (PLOT_X - yw) / 2;
   if (yx < 0)
     yx = 0;
-  tft.setCursor(yx, AXIS_UNIT_ROW_Y - 3);
+  tft.setCursor(yx, PLOT_Y);
   tft.print(yUnit);
 
   int labelY = BASE_Y + 10;
@@ -531,18 +525,27 @@ void draw_axes(uint16_t N)
 {
   tft.fillScreen(COL_BG);
 
-  // Title centered
+  // Title, in Aurora7pt7b (this project's own custom GFXfont, chosen after
+  // a side-by-side mockup comparison against the built-in font). Centered
+  // on its own real ink extents via getTextBounds - which works the same
+  // way for a custom GFXfont as for the built-in one - within the headroom
+  // above the plot, rather than a band sized for the old built-in-font
+  // title: Aurora's glyphs are shorter, so centering on real bounds (instead
+  // of reusing the old font's fixed vertical offsets) is what let TOP
+  // shrink in Config.h without the title looking cramped.
   const char *title = (gDisplayMode == MODE_FFT) ? "Spectrum Analyser" : "Waveform Analyser";
+  tft.setFont(&aurora_247pt7b);
   int16_t bx, by;
   uint16_t tw, th;
-  tft.setTextSize(2);
   tft.getTextBounds(title, 0, 0, &bx, &by, &tw, &th);
-  int tx = (SCREEN_W - (int)tw) / 2;
-  int ty = PLOT_Y - 18;
+  int tx = (SCREEN_W - (int)tw) / 2 - bx;
+  int bandTop = 2, bandBottom = PLOT_Y - 2;
+  int inkTop = bandTop + ((bandBottom - bandTop) - (int)th) / 2;
+  int ty = inkTop - by; // baseline position that puts the real ink top at inkTop
   tft.setCursor(tx, ty);
   tft.setTextColor(COL_TITLE, COL_BG);
   tft.print(title);
-  tft.setTextSize(1);
+  tft.setFont(NULL); // back to the classic built-in font for everything else
 
   // Plot box
   tft.drawFastHLine(PLOT_X, BASE_Y + 1, PLOT_W, COL_AX);

@@ -37,7 +37,11 @@ static const int SCREEN_H = 240;
 
 static const int LM = 30;
 static const int RM = 16;
-static const int TOP = 36;     // room for centered title
+// Room for the centered title. Was 36 (sized for the old built-in-font
+// title); Aurora7pt7b's real glyph height needs less headroom, so this
+// shrank by ~14px (about one Y-axis minor-tick interval) and that space
+// went to the plot instead - see draw_axes()'s title block in Display.cpp.
+static const int TOP = 22;
 static const int HUD_H = 20;   // bottom HUD band
 static const int BOT_GAP = 18; // gap for X labels above HUD
 
