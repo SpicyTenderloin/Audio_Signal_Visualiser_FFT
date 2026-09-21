@@ -192,6 +192,14 @@ static void erase_polyline(const int16_t *yArr)
 // Both populate s_colVGridColor/s_rowBG as they go, same as each other, so
 // the erase machinery above stays generic across modes.
 
+// Row reserved for the Y-axis unit caption (see draw_axis_unit_labels()):
+// whichever major Y-tick would land nearest the plot's vertical center has
+// its text suppressed below (gridline and tick stub still draw as normal),
+// freeing a collision-free row for the caption in an otherwise fully-used
+// left margin.
+static const int AXIS_UNIT_ROW_Y = PLOT_Y + PLOT_H / 2;
+static inline bool is_axis_unit_row(int y) { return abs(y - AXIS_UNIT_ROW_Y) <= 5; }
+
 static void draw_xticks_fft()
 {
   int labelY = BASE_Y + 10;
@@ -231,8 +239,10 @@ static void draw_xticks_fft()
       uint16_t ltw, lth;
       tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
       int lx = x - (int)ltw / 2;
-      if (lx < PLOT_X)
-        lx = PLOT_X;
+      if (lx < 0)
+        lx = 0;
+      // Right bound stays PLOT_X+PLOT_W (not SCREEN_W): the strip beyond it
+      // is reserved for the X-axis unit caption, see draw_axis_unit_labels().
       if (lx + (int)ltw > PLOT_X + PLOT_W)
         lx = PLOT_X + PLOT_W - (int)ltw;
       tft.setCursor(lx, labelY);
@@ -287,8 +297,8 @@ static void draw_xticks_fft()
       uint16_t ltw, lth;
       tft.getTextBounds(L.s, 0, 0, &lbx, &lby, &ltw, &lth);
       int lx = x - (int)ltw / 2;
-      if (lx < PLOT_X)
-        lx = PLOT_X;
+      if (lx < 0)
+        lx = 0;
       if (lx + (int)ltw > PLOT_X + PLOT_W)
         lx = PLOT_X + PLOT_W - (int)ltw;
       tft.setCursor(lx, labelY);
@@ -352,7 +362,7 @@ static void draw_yticks_fft()
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-      if (major)
+      if (major && !is_axis_unit_row(y))
       {
         char lab[12];
         snprintf(lab, sizeof(lab), "%d", d);
@@ -379,7 +389,7 @@ static void draw_yticks_fft()
       int tickLen = major ? 6 : 3;
       tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-      if (major)
+      if (major && !is_axis_unit_row(y))
       {
         char lab[12];
         snprintf(lab, sizeof(lab), "%d", pct);
@@ -421,7 +431,7 @@ static void draw_xticks_waveform()
   // No unit suffix on any tick (unlike the old firstMajor="Xms" approach):
   // on a horizontal axis, a label that's a couple of characters wider than
   // its neighbors risks running straight into them - the FFT X-axis never
-  // appended one for the same reason. The unit lives in the corner caption
+  // appended one for the same reason. The unit lives in its own caption
   // (draw_axis_unit_labels()) instead.
   for (float t = 0.0f; t <= spanMs + 0.01f * major; t += major)
   {
@@ -432,8 +442,8 @@ static void draw_xticks_waveform()
     uint16_t ltw, lth;
     tft.getTextBounds(lab, 0, 0, &lbx, &lby, &ltw, &lth);
     int lx = x - (int)ltw / 2;
-    if (lx < PLOT_X)
-      lx = PLOT_X;
+    if (lx < 0)
+      lx = 0;
     if (lx + (int)ltw > PLOT_X + PLOT_W)
       lx = PLOT_X + PLOT_W - (int)ltw;
     tft.setCursor(lx, labelY);
@@ -477,31 +487,43 @@ static void draw_yticks_waveform()
     int tickLen = major_ ? 6 : 3;
     tft.drawFastHLine(PLOT_X - tickLen, y, tickLen, COL_AX);
 
-    if (major_)
+    if (major_ && !is_axis_unit_row(y))
     {
       char lab[12];
-      snprintf(lab, sizeof(lab), "%.2f", (double)v);
+      format_volts_label(lab, sizeof(lab), v, major);
       draw_ytick_label(lab, y, tickLen);
     }
   }
 }
 
-// Small unit caption in each corner of the title row (empty either side of
-// the centered title, so it never competes for space with the tick labels
-// themselves): Y-axis unit top-left, X-axis unit top-right.
+// Unit captions for each axis, placed in the plot's own margins rather than
+// the title row (crowded, and unrelated to the title itself):
+//   - Y-axis unit: horizontally centered in the left margin, on the row
+//     draw_yticks_*() left clear via is_axis_unit_row() - so it reads as
+//     "this whole column of numbers is volts/dB/%" without overlapping any
+//     of them.
+//   - X-axis unit: right margin, same row as the X tick labels - those are
+//     kept clear of this strip by the PLOT_X+PLOT_W clamp in
+//     draw_xticks_fft()/draw_xticks_waveform().
 static void draw_axis_unit_labels()
 {
   const char *yUnit = (gDisplayMode == MODE_FFT) ? (gYScale == YS_DB ? "dB" : "%") : "V";
   const char *xUnit = (gDisplayMode == MODE_FFT) ? "Hz" : "ms";
-
-  int labelRowY = PLOT_Y - 14;
   tft.setTextColor(COL_TEXT, COL_BG);
 
-  tft.setCursor(2, labelRowY);
+  int yw = (int)strlen(yUnit) * 6;
+  int yx = (PLOT_X - yw) / 2;
+  if (yx < 0)
+    yx = 0;
+  tft.setCursor(yx, AXIS_UNIT_ROW_Y - 3);
   tft.print(yUnit);
 
-  int xUnitW = (int)strlen(xUnit) * 6;
-  tft.setCursor(SCREEN_W - 2 - xUnitW, labelRowY);
+  int labelY = BASE_Y + 10;
+  int maxLabelY = SCREEN_H - HUD_H - 2;
+  if (labelY > maxLabelY)
+    labelY = maxLabelY;
+  int xw = (int)strlen(xUnit) * 6;
+  tft.setCursor(SCREEN_W - 2 - xw, labelY);
   tft.print(xUnit);
 }
 

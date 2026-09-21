@@ -69,6 +69,21 @@ void format_time_label(char *out, size_t n, float ms)
     snprintf(out, n, "%.0f", (double)ms);
 }
 
+void format_volts_label(char *out, size_t n, float v, float major)
+{
+  int decimals = 2;
+  for (int d = 0; d <= 2; d++)
+  {
+    float scale = powf(10.0f, d);
+    if (fabsf(roundf(major * scale) / scale - major) < 1e-4f)
+    {
+      decimals = d;
+      break;
+    }
+  }
+  snprintf(out, n, "%.*f", decimals, (double)v);
+}
+
 int bins_per_point(uint16_t N)
 {
   int Kvis = visible_bin_count(N);

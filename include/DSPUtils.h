@@ -19,6 +19,12 @@ void format_freq_label(char *out, size_t n, float fHz);
 // Formats a time in milliseconds as plain digits (unit-free - callers add
 // "ms") with precision scaled to magnitude, for axis labels.
 void format_time_label(char *out, size_t n, float ms);
+// Formats a voltage as plain digits (unit-free - callers add "V"), with
+// decimal precision matched to the tick step `major` rather than a fixed
+// count of places - a clean step like 0.5V or 2V doesn't need the trailing
+// zero digits a fixed "%.2f" would force, and every extra digit costs space
+// in the narrow left-axis margin.
+void format_volts_label(char *out, size_t n, float v, float major);
 
 // -------------------- Plot bin aggregation ------------------
 // Number of FFT bins averaged together per horizontal pixel, given N.
