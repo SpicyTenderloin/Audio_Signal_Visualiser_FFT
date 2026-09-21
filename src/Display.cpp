@@ -481,7 +481,7 @@ void draw_axes(uint16_t N)
   tft.fillScreen(COL_BG);
 
   // Title centered
-  const char *title = (gDisplayMode == MODE_FFT) ? "Spectrum" : "Waveform";
+  const char *title = (gDisplayMode == MODE_FFT) ? "Spectrum Analyser" : "Waveform Analyser";
   int16_t bx, by;
   uint16_t tw, th;
   tft.setTextSize(2);
